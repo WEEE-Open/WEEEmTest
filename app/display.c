@@ -95,7 +95,20 @@ screen_palette_t palette = {BLUE, WHITE, WHITE, BLACK, WHITE, BLUE, BLACK};
 
 static void set_screen_palette(screen_palette_t *mt_palette)
 {
-    if (dark_mode) {
+
+    bool mauve_egg = (get_tsc() % 69) == 0;
+
+    if (mauve_egg){
+        *mt_palette = (screen_palette_t){
+            .background        = MAUVE,
+            .foreground        = WHITE,
+            .title_background  = WHITE,
+            .title_foreground  = MAUVE,
+            .footer_background = WHITE,
+            .footer_foreground = BLACK,
+            .popup_background  = WHITE
+        };
+    } else if (dark_mode) {
         *mt_palette = (screen_palette_t){
             .background        = BLACK,
             .foreground        = WHITE,
@@ -107,10 +120,10 @@ static void set_screen_palette(screen_palette_t *mt_palette)
         };
     } else {
         *mt_palette = (screen_palette_t){
-            .background        = BLUE,
-            .foreground        = WHITE,
+            .background        = GREEN,
+            .foreground        = BLACK,
             .title_background  = WHITE,
-            .title_foreground  = BLACK,
+            .title_foreground  = GREEN,
             .footer_background = WHITE,
             .footer_foreground = BLUE,
             .popup_background  = BLACK
@@ -136,12 +149,15 @@ void display_init(void)
      * Extended ASCII characters.
      */
 
-    set_foreground_colour(palette.title_foreground);
-    set_background_colour(palette.title_background);
-    clear_screen_region(0, 0, 0, 27);
-    prints(0, 0, "      Memtest86+ v" MT_VERSION);
-    set_foreground_colour(RED);
-    printc(0, 15, '+');
+        set_background_colour(palette.title_background);
+        clear_screen_region(0, 0, 0, 27);
+
+        set_foreground_colour(GREEN);
+        prints(0, 0, "     WEEE");
+
+        set_foreground_colour(BLACK);
+        prints(0, 9, "mTest  w" MT_VERSION);
+
     set_foreground_colour(palette.foreground);
     set_background_colour(palette.background);
     prints(1, 0, "CLK/Temp:   N/A             | Pass   %");
@@ -449,8 +465,18 @@ void display_big_status(bool pass)
 
     save_screen_region(POP_STATUS_REGION, popup_status_save_buffer);
 
-    set_background_colour(palette.popup_background);
-    set_foreground_colour(pass ? GREEN : RED);
+    //set_background_colour(palette.popup_background);
+    //set_foreground_colour(pass ? GREEN : RED);
+
+    // set a red banner with withe text for a fail and a black banner with green text
+    if (pass) {
+        set_background_colour(palette.popup_background);
+        set_foreground_colour(GREEN);
+    } else {
+        set_background_colour(RED);
+        set_foreground_colour(WHITE);
+    }
+
     clear_screen_region(POP_STATUS_REGION);
 
     if (pass) {
@@ -631,6 +657,13 @@ void do_tick(int my_cpu)
 
     // This only tick one time per second
     if (!timed_update_done) {
+
+        // in case of error, the background becomes red
+        if(error_count > 0) {
+            set_background_colour(RED);
+
+            clear_screen();
+        }
 
         // Display FAIL banner if (new) errors detected
         if (err_banner_redraw && !big_status_displayed && error_count > 1) {
