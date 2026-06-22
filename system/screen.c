@@ -38,7 +38,7 @@ static const rgb_value_t vga_pallete[16] = {
     //  R    G    B
     {   0,   0,   0 },  // BLACK
     {   0,   0, 170 },  // BLUE
-    {   0, 170,   0 },  // GREEN
+    {  18, 138,  46 },  // GREEN //WEEERDE
     {   0, 170, 170 },  // CYAN
     { 170,   0,   0 },  // RED
     { 170,   0, 170 },  // MAUVE

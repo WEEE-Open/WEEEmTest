@@ -98,34 +98,44 @@ static void set_screen_palette(screen_palette_t *mt_palette)
 
     bool mauve_egg = (get_tsc() % 69) == 0;
 
-    if (mauve_egg){
+    if (error_count > 0) {
+            *mt_palette = (screen_palette_t){
+                .background        = RED,
+                .foreground        = WHITE,
+                .title_background  = BLACK,
+                .title_foreground  = RED,
+                .footer_background = RED,
+                .footer_foreground = WHITE,
+                .popup_background  = WHITE
+            };
+        } else if (mauve_egg){
         *mt_palette = (screen_palette_t){
             .background        = MAUVE,
             .foreground        = WHITE,
-            .title_background  = WHITE,
+            .title_background  = BLACK,
             .title_foreground  = MAUVE,
-            .footer_background = WHITE,
-            .footer_foreground = BLACK,
+            .footer_background = MAUVE,
+            .footer_foreground = WHITE,
             .popup_background  = WHITE
         };
     } else if (dark_mode) {
         *mt_palette = (screen_palette_t){
             .background        = BLACK,
             .foreground        = WHITE,
-            .title_background  = WHITE,
-            .title_foreground  = BLACK,
-            .footer_background = WHITE,
-            .footer_foreground = BLACK,
+            .title_background  = BLACK,
+            .title_foreground  = WHITE,
+            .footer_background = BLACK,
+            .footer_foreground = WHITE,
             .popup_background  = WHITE
         };
     } else {
         *mt_palette = (screen_palette_t){
             .background        = GREEN,
             .foreground        = BLACK,
-            .title_background  = WHITE,
+            .title_background  = BLACK,
             .title_foreground  = GREEN,
-            .footer_background = WHITE,
-            .footer_foreground = BLUE,
+            .footer_background = GREEN,
+            .footer_foreground = BLACK,
             .popup_background  = BLACK
         };
     }
@@ -137,12 +147,45 @@ static void set_screen_palette(screen_palette_t *mt_palette)
 
 void display_init(void)
 {
+    static bool bootscreen_shown = false;
+
     cursor_off();
 
     set_screen_palette(&palette);
     set_background_colour(palette.background);
 
     clear_screen();
+
+    /*
+     * INIZIO CUSTOM BOOTSCREEN
+     */
+
+    if (!bootscreen_shown) {
+            set_foreground_colour(BLACK);
+
+            prints(8, 0,  " __      ___________________________________     ___________              __   ");
+            prints(9, 0,  "/  \\\\    /  \\\\_   _____/\\\\_   _____/\\\\_   _____/ ____\\\\__    ___/___   _______/  |_ ");
+            prints(10, 0, "\\\\   \\\\/\\\\/   /|    __)_  |    __)_  |    __)_ /      \\\\|    |_/ __ \\\\ /  ___/\\\\   __\\\\");
+            prints(11, 0, " \\\\        / |        \\\\ |        \\\\ |        \\\\  Y Y  \\\\    |\\\\  ___/ \\\\___ \\\\  |  |  ");
+            prints(12, 0, "  \\\\__/\\\\  / /_______  //_______  //_______  /__|_|  /____| \\\\___  >____  > |__|  ");
+            prints(13, 0, "       \\\\/          \\\\/          \\\\/          \\\\/      \\\\/            \\\\/     \\\\/        ");
+
+            set_foreground_colour(palette.foreground);
+            prints(17, 16, "Avvio in corso...");
+
+            uint64_t start_time = get_tsc();
+            uint64_t k_cycles_1sec = 1000 * (uint64_t)clks_per_msec;
+
+            while ((get_tsc() - start_time) < k_cycles_1sec) {
+                if (get_key() != '\0') {
+                    break;
+                }
+            }
+
+            clear_screen();
+
+            bootscreen_shown = true;
+        }
 
     /* The commented horizontal lines provide visual cue for where and how
      * they will appear on the screen. They are drawn down below using
@@ -155,8 +198,8 @@ void display_init(void)
         set_foreground_colour(GREEN);
         prints(0, 0, "     WEEE");
 
-        set_foreground_colour(BLACK);
-        prints(0, 9, "mTest  w" MT_VERSION);
+        set_foreground_colour(WHITE);
+        prints(0, 9, "mTest w" MT_VERSION);
 
     set_foreground_colour(palette.foreground);
     set_background_colour(palette.background);
@@ -659,11 +702,14 @@ void do_tick(int my_cpu)
     if (!timed_update_done) {
 
         // in case of error, the background becomes red
-        if(error_count > 0) {
-            set_background_colour(RED);
+        static bool error_layout_drawn = false;
 
-            clear_screen();
-        }
+            if(error_count > 0 && !error_layout_drawn) {
+                    display_init();
+                    display_start_run();
+                    display_start_test();
+                    error_layout_drawn = true;
+                }
 
         // Display FAIL banner if (new) errors detected
         if (err_banner_redraw && !big_status_displayed && error_count > 1) {

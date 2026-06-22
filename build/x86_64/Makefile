@@ -206,15 +206,15 @@ esp.img: mt86plus
 	/sbin/mkdosfs -n MEMTEST-ESP -F12 -C esp.img 4096
 	mcopy -s -i esp.img iso/EFI ::
 
-memtest.iso: memtest.mbr floppy.img esp.img
+WEEEmTest.iso: memtest.mbr floppy.img esp.img
 	@mkdir -p iso/boot
 	cp floppy.img iso/boot/floppy.img
-	xorrisofs -pad -R -J -volid MT86PLUS_64 -graft-points -hide-rr-moved --grub2-mbr memtest.mbr \
+	xorrisofs -pad -R -J -volid WEEEMTEST -graft-points -hide-rr-moved --grub2-mbr memtest.mbr \
 		  -b /boot/floppy.img --efi-boot --interval:appended_partition_2:all:: \
 		  -part_like_isohybrid -iso_mbr_part_type 0x00 -append_partition 2 0xef ./esp.img \
-		  -o ./memtest.iso /boot=./iso/boot /EFI=./iso/EFI
+		  -o ./WEEEmTest.iso /boot=./iso/boot /EFI=./iso/EFI
 
-iso: memtest.iso
+iso: WEEEmTest.iso
 
 clean:
 	rm -rf boot system lib tests app *.img *.iso memtest* mt86plus iso grub-*
@@ -263,18 +263,18 @@ grub-esp.img: mt86plus grub-bootx64.efi ../../grub/${GRUB_CFG}-efi.cfg
 	/sbin/mkdosfs -n MT86P_ESP -F12 -C grub-esp.img 8192
 	mcopy -s -i grub-esp.img grub-iso/EFI ::
 
-grub-memtest.iso: mt86plus grub-eltorito.img ../../grub/${GRUB_CFG}-legacy.cfg grub-esp.img
+grub-WEEEmTest.iso: mt86plus grub-eltorito.img ../../grub/${GRUB_CFG}-legacy.cfg grub-esp.img
 	@mkdir -p grub-iso/boot/grub/i386-pc grub-iso/boot/grub/fonts
 	cp mt86plus grub-iso/boot/memtest
 	cp grub-eltorito.img grub-iso/boot/eltorito.img
 	cp ../../grub/${GRUB_CFG}-legacy.cfg grub-iso/boot/grub/grub.cfg
 	cp $(GRUB_FONT_DIR)/unicode.pf2 grub-iso/boot/grub/fonts/
 	cp $(GRUB_LIB_DIR)/i386-pc/*.mod grub-iso/boot/grub/i386-pc/
-	xorrisofs -pad -R -J -volid MT86PLUS_64 -graft-points -hide-rr-moved \
+	xorrisofs -pad -R -J -volid WEEEMTEST -graft-points -hide-rr-moved \
 		  --grub2-mbr $(GRUB_LIB_DIR)/i386-pc/boot_hybrid.img \
 		  -b /boot/eltorito.img -no-emul-boot -boot-load-size 4 -boot-info-table --grub2-boot-info \
 		  --efi-boot --interval:appended_partition_2:all:: \
 		  -part_like_isohybrid -iso_mbr_part_type 0x00 -append_partition 2 0xef ./grub-esp.img \
-		  -o ./grub-memtest.iso /boot=./grub-iso/boot /EFI=./grub-iso/EFI
+		  -o ./grub-WEEEmTest.iso /boot=./grub-iso/boot /EFI=./grub-iso/EFI
 
-grub-iso: grub-memtest.iso
+grub-iso: grub-WEEEmTest.iso

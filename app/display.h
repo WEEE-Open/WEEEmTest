@@ -146,7 +146,7 @@ typedef enum {
 
 #define display_pass_bar(length) \
     while (length > pass_bar_length) {          \
-        printc(1, 39 + pass_bar_length, '#');   \
+        printc(1, 39 + pass_bar_length, (pass_bar_length == 0) ? 'W' : 'E');   \
         pass_bar_length++;                      \
     }
 
@@ -155,7 +155,7 @@ typedef enum {
 
 #define display_test_bar(length) \
     while (length > test_bar_length) {          \
-        printc(2, 39 + test_bar_length, '#');   \
+        printc(2, 39 + test_bar_length, (test_bar_length == 0) ? 'W' : 'E');   \
         test_bar_length++;                      \
     }
 
