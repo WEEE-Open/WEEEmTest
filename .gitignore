@@ -19,7 +19,6 @@ memtest_shared.bin
 *.bin
 *.efi
 *.img
-*.iso
 *.mbr
 *.debug
 
@@ -30,5 +29,3 @@ latex
 
 # OVMF
 OVMF*
-
-

@@ -1,3 +1,18 @@
+# WEEEmTest
+
+WEEEmTest is a fork of Memtest86+, with the only changes:
+- default background color: WEEErde, beacouse there wasn't an option already (1/69 chance of being *mauve* beacuse we're funny)
+- The loading bar now is just a **WEEEEEEEEEEE**
+- branding, beacuse it was really important
+- red background in case of failed test
+- custom bootscreen
+- easy to download .iso
+
+To recompile the x86_64 version just go to the folder (path: ~/build/x86_64/) and execute `make` and `make iso` (if on Linux be sure to have [xorriso](https://www.gnu.org/software/xorriso/) installed)
+
+
+For the rest i's just classic Memtest86+
+
 # Memtest86+
 
 Memtest86+ is a free, open-source, stand-alone memory tester for x86, x86-64
