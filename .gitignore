@@ -14,11 +14,13 @@ memtest_shared_debug.lds
 
 # Binaries
 mt86plus
+weeemtest
 memtest_shared
 memtest_shared.bin
 *.bin
 *.efi
 *.img
+*.iso
 *.mbr
 *.debug
 

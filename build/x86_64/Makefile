@@ -85,7 +85,7 @@ APP_OBJS = app/badram.o \
 
 OBJS = boot/x86/startup.o boot/efisetup.o $(SYS_OBJS) $(IMC_OBJS) $(LIB_OBJS) $(TST_OBJS) $(APP_OBJS)
 
-all: mt86plus
+all: weeemtest
 
 check:
 	@if [ -z ${DEBUG} ]; then\
@@ -93,7 +93,7 @@ check:
 		exit 1;\
 	fi
 
-debug: check memtest.debug mt86plus
+debug: check memtest.debug weeemtest
 
 -include boot/efisetup.d
 -include $(subst .o,.d,$(SYS_OBJS))
@@ -185,23 +185,23 @@ memtest.debug: memtest_shared
 # Both are then used by ld as raw binary inputs. The EFI linker script
 # push them into separate PE sections via filename match
 
-mt86plus: memtest_shared.bin boot/x86/header.o ldscripts/memtest_efi.lds
+weeemtest: memtest_shared.bin boot/x86/header.o ldscripts/memtest_efi.lds
 	$(eval SIZES=$(shell size -B -d memtest_shared | grep memtest_shared))
 	$(eval SPLIT=$(shell nm -t d memtest_shared | awk '/ _etext_ro$$/{print $$1+0}'))
 	dd if=memtest_shared.bin of=memtest_text.bin bs=$(SPLIT) count=1 2>/dev/null
 	dd if=memtest_shared.bin of=memtest_data.bin bs=$(SPLIT) skip=1 2>/dev/null
-	$(LD) --defsym=_bss_size=$(word 3,$(SIZES)) -T ldscripts/memtest_efi.lds boot/x86/header.o -b binary memtest_text.bin memtest_data.bin -o mt86plus
+	$(LD) --defsym=_bss_size=$(word 3,$(SIZES)) -T ldscripts/memtest_efi.lds boot/x86/header.o -b binary memtest_text.bin memtest_data.bin -o weeemtest
 
 memtest.mbr: memtest_shared.bin boot/x86/mbr.o ldscripts/memtest_mbr.lds
 	$(LD) -T ldscripts/memtest_mbr.lds boot/x86/mbr.o -b binary memtest_shared.bin -o memtest.mbr
 
-floppy.img: mt86plus
+floppy.img: weeemtest
 	dd if=/dev/zero of=floppy.img bs=1474560 count=1
-	dd if=mt86plus of=floppy.img bs=1474560 conv=notrunc
+	dd if=weeemtest of=floppy.img bs=1474560 conv=notrunc
 
-esp.img: mt86plus
+esp.img: weeemtest
 	@mkdir -p iso/EFI/BOOT
-	cp mt86plus iso/EFI/BOOT/bootx64.efi
+	cp weeemtest iso/EFI/BOOT/bootx64.efi
 	@rm -f esp.img
 	/sbin/mkdosfs -n MEMTEST-ESP -F12 -C esp.img 4096
 	mcopy -s -i esp.img iso/EFI ::
@@ -217,9 +217,9 @@ WEEEmTest.iso: memtest.mbr floppy.img esp.img
 iso: WEEEmTest.iso
 
 clean:
-	rm -rf boot system lib tests app *.img *.iso memtest* mt86plus iso grub-*
+	rm -rf boot system lib tests app *.img *.iso memtest* weeemtest iso grub-* weeemtest*
 
-# grub-memtest.iso uses GRUB as an intermediate bootloader to allow Memtest86+
+# grub-weeemtest.iso uses GRUB as an intermediate bootloader to allow Memtest86+
 # to be started with the native USB keyboard drivers either enabled or disabled,
 # or to be started in a fail-safe mode with SMP and memory identification &
 # speed testing disabled.
@@ -252,9 +252,9 @@ grub-eltorito.img:
 grub-bootx64.efi:
 	$(GRUB_MKIMAGE) --output $@ --prefix /EFI/BOOT/grub --format x86_64-efi $(GRUB_MODULES)
 
-grub-esp.img: mt86plus grub-bootx64.efi ../../grub/${GRUB_CFG}-efi.cfg
+grub-esp.img: weeemtest grub-bootx64.efi ../../grub/${GRUB_CFG}-efi.cfg
 	@mkdir -p grub-iso/EFI/BOOT/grub/x86_64-efi grub-iso/EFI/BOOT/grub/fonts
-	cp mt86plus grub-iso/EFI/BOOT/memtest
+	cp weeemtest grub-iso/EFI/BOOT/memtest
 	cp grub-bootx64.efi grub-iso/EFI/BOOT/bootx64.efi
 	cp ../../grub/${GRUB_CFG}-efi.cfg grub-iso/EFI/BOOT/grub/grub.cfg
 	cp $(GRUB_FONT_DIR)/unicode.pf2 grub-iso/EFI/BOOT/grub/fonts/
@@ -263,9 +263,9 @@ grub-esp.img: mt86plus grub-bootx64.efi ../../grub/${GRUB_CFG}-efi.cfg
 	/sbin/mkdosfs -n MT86P_ESP -F12 -C grub-esp.img 8192
 	mcopy -s -i grub-esp.img grub-iso/EFI ::
 
-grub-WEEEmTest.iso: mt86plus grub-eltorito.img ../../grub/${GRUB_CFG}-legacy.cfg grub-esp.img
+grub-WEEEmTest.iso: weeemtest grub-eltorito.img ../../grub/${GRUB_CFG}-legacy.cfg grub-esp.img
 	@mkdir -p grub-iso/boot/grub/i386-pc grub-iso/boot/grub/fonts
-	cp mt86plus grub-iso/boot/memtest
+	cp weeemtest grub-iso/boot/memtest
 	cp grub-eltorito.img grub-iso/boot/eltorito.img
 	cp ../../grub/${GRUB_CFG}-legacy.cfg grub-iso/boot/grub/grub.cfg
 	cp $(GRUB_FONT_DIR)/unicode.pf2 grub-iso/boot/grub/fonts/
