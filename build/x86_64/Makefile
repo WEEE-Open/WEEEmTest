@@ -244,7 +244,7 @@ GRUB_LIB_DIR ?= /usr/lib/grub
 GRUB_MKIMAGE := $(shell command -v grub2-mkimage || command -v grub-mkimage)
 
 GRUB_MODULES = iso9660 fat part_msdos part_gpt all_video font gfxterm gfxmenu \
-               boot chain configfile echo ls
+               boot chain configfile echo ls jpeg gfxterm_background
 
 grub-eltorito.img:
 	$(GRUB_MKIMAGE) --output $@ --prefix /boot/grub --format i386-pc-eltorito biosdisk $(GRUB_MODULES)
@@ -257,6 +257,7 @@ grub-esp.img: weeemtest grub-bootx64.efi ../../grub/${GRUB_CFG}-efi.cfg
 	cp weeemtest grub-iso/EFI/BOOT/memtest
 	cp grub-bootx64.efi grub-iso/EFI/BOOT/bootx64.efi
 	cp ../../grub/${GRUB_CFG}-efi.cfg grub-iso/EFI/BOOT/grub/grub.cfg
+	cp ../../grub/splash.jpg grub-iso/EFI/BOOT/grub/splash.jpg
 	cp $(GRUB_FONT_DIR)/unicode.pf2 grub-iso/EFI/BOOT/grub/fonts/
 	cp $(GRUB_LIB_DIR)/x86_64-efi/*.mod grub-iso/EFI/BOOT/grub/x86_64-efi/
 	@rm -f grub-esp.img
@@ -268,6 +269,7 @@ grub-WEEEmTest.iso: weeemtest grub-eltorito.img ../../grub/${GRUB_CFG}-legacy.cf
 	cp weeemtest grub-iso/boot/memtest
 	cp grub-eltorito.img grub-iso/boot/eltorito.img
 	cp ../../grub/${GRUB_CFG}-legacy.cfg grub-iso/boot/grub/grub.cfg
+	cp ../../grub/splash.jpg grub-iso/boot/grub/splash.jpg
 	cp $(GRUB_FONT_DIR)/unicode.pf2 grub-iso/boot/grub/fonts/
 	cp $(GRUB_LIB_DIR)/i386-pc/*.mod grub-iso/boot/grub/i386-pc/
 	xorrisofs -pad -R -J -volid WEEEMTEST -graft-points -hide-rr-moved \
