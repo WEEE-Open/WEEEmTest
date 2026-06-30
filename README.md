@@ -7,6 +7,7 @@ WEEEmTest is a fork of Memtest86+, with the only changes:
 - red background in case of failed test
 - custom bootscreen
 - easy to download .iso
+- custom splash image for the grub menu
 
 To recompile the x86_64 version just go to the folder (path: ~/build/x86_64/) and execute `make` and `make iso` (if on Linux be sure to have [xorriso](https://www.gnu.org/software/xorriso/) installed)
 
