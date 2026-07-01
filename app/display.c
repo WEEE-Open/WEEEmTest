@@ -87,7 +87,7 @@ int max_cpu_temp = TEMP_INVALID;
 
 display_mode_t display_mode = DISPLAY_MODE_NA;
 
-screen_palette_t palette = {BLUE, WHITE, WHITE, BLACK, WHITE, BLUE, BLACK};
+screen_palette_t palette = {GREEN, BLACK, BLACK, GREEN, GREEN, BLACK, BLACK};
 
 //------------------------------------------------------------------------------
 // Private Functions
@@ -164,12 +164,12 @@ void display_init(void)
             set_foreground_colour(BLACK);
 
 
-           prints (8, 0, " _    _ _____ _____ _____        _____         _   ");
-           prints (9, 0, "| |  | |  ___|  ___|  ___|      |_   _|       | |  ");
-           prints (10, 0, "| |  | | |__ | |__ | |__ _ __ ___ | | ___  ___| |_ ");
-           prints (11, 0, "| |/\| |  __||  __||  __| '_ ` _ \| |/ _ \/ __| __|");
-           prints (12, 0, "\  /\  / |___| |___| |__| | | | | | |  __/\__ \ |_ ");
-           prints (13, 0, " \/  \/\____/\____/\____/_| |_| |_\_/\___||___/\__|");
+            prints( 8, 15, " _    _ _____ _____ _____        _____         _   ");
+            prints( 9, 15, "| |  | |  ___|  ___|  ___|      |_   _|       | |  ");
+            prints(10, 15, "| |  | | |__ | |__ | |__   _ __ ___ | | ___  ___| |_ ");
+            prints(11, 15, "| |/\\| |  __||  __||  __|  | '_ ` _ \\| |/ _ \\/ __| __|");
+            prints(12, 15, " \\  /\\ / |___| |___| |__| | | | | | | |  __/\\__ \\ |_ ");
+            prints(13, 15, "  \\/ \\/\\____/\\____/\\____/ |_| |_| |_|\\_/\\___||___/\\__|");
 
            /* // legacy bootscreen, Alp didn't like it
             prints(8, 0,  " __      ___________________________________     ___________              __   ");
@@ -181,10 +181,10 @@ void display_init(void)
             */
 
             set_foreground_colour(palette.foreground);
-            prints(17, 16, "Avvio in corso...");
+            prints(17, 16, "Starting...");
 
             uint64_t start_time = get_tsc();
-            uint64_t k_cycles_1sec = 1000 * (uint64_t)clks_per_msec;
+            uint64_t k_cycles_1sec = 3000 * (uint64_t)clks_per_msec;
 
             while ((get_tsc() - start_time) < k_cycles_1sec) {
                 if (get_key() != '\0') {
@@ -206,10 +206,10 @@ void display_init(void)
         clear_screen_region(0, 0, 0, 27);
 
         set_foreground_colour(GREEN);
-        prints(0, 0, "     WEEE");
+        prints(0, 0, "   WEEE");
 
         set_foreground_colour(WHITE);
-        prints(0, 9, "mTest w" MT_VERSION);
+        prints(0, 7, "mTest w" WEEERSION " (v" MT_VERSION ")");
 
     set_foreground_colour(palette.foreground);
     set_background_colour(palette.background);
