@@ -31,3 +31,6 @@ latex
 
 # OVMF
 OVMF*
+
+# JSON for zed configuration
+compile_commands.json
