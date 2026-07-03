@@ -67,7 +67,7 @@ extern bool         enable_ecc_polling;
 extern bool         enable_numa;
 
 extern bool         pause_at_start;
-extern bool         dark_mode;
+extern bool         test_mode;
 
 extern power_save_t power_save;
 

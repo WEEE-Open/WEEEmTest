@@ -25,7 +25,7 @@ else
   MS_LDS=ldscripts/memtest_shared.lds
 endif
 
-INC_DIRS = -I../../boot -I../../system -I../../system/imc -I../../system/x86 -I../../lib -I../../tests -I../../app -Iapp
+INC_DIRS = -I../../boot -I../../system -I../../system/imc -I../../system/x86 -I../../lib -I../../tests -I../../app -Iapp -I../../http-integration/tarallo
 
 SYS_OBJS = system/acpi.o \
            system/cpulocal.o \
@@ -81,7 +81,8 @@ APP_OBJS = app/badram.o \
            app/display.o \
            app/error.o \
            app/main.o \
-           app/x86/interrupt.o
+           app/x86/interrupt.o\
+           http-integration/tarallo/tarallo.o
 
 OBJS = boot/x86/startup.o boot/efisetup.o $(SYS_OBJS) $(IMC_OBJS) $(LIB_OBJS) $(TST_OBJS) $(APP_OBJS)
 
@@ -142,6 +143,10 @@ tests/%.o: ../../tests/%.c
 
 app/%.o: ../../app/%.c app/build_version.h
 	@mkdir -p app
+	$(CC) -c $(CFLAGS) $(OPT_SMALL) $(INC_DIRS) -o $@ $< -MMD -MP -MT $@ -MF $(@:.o=.d)
+
+http-integration/tarallo/%.o: ../../http-integration/tarallo/%.c app/build_version.h
+	@mkdir -p $(@D)
 	$(CC) -c $(CFLAGS) $(OPT_SMALL) $(INC_DIRS) -o $@ $< -MMD -MP -MT $@ -MF $(@:.o=.d)
 
 app/x86/%.o: ../../app/x86/%.c app/build_version.h
@@ -215,6 +220,16 @@ WEEEmTest.iso: memtest.mbr floppy.img esp.img
 		  -o ./WEEEmTest.iso /boot=./iso/boot /EFI=./iso/EFI
 
 iso: WEEEmTest.iso
+
+TestTest.iso: memtest.mbr floppy.img esp.img
+	@mkdir -p iso/boot
+	cp floppy.img iso/boot/floppy.img
+	xorrisofs -pad -R -J -volid WEEEMTEST -graft-points -hide-rr-moved --grub2-mbr memtest.mbr \
+		  -b /boot/floppy.img --efi-boot --interval:appended_partition_2:all:: \
+		  -part_like_isohybrid -iso_mbr_part_type 0x00 -append_partition 2 0xef ./esp.img \
+		  -o ./TestTest.iso /boot=./iso/boot /EFI=./iso/EFI
+
+test-iso: TestTest.iso
 
 clean:
 	rm -rf boot system lib tests app *.img *.iso memtest* weeemtest iso grub-* weeemtest*

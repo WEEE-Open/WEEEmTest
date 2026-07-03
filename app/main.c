@@ -51,6 +51,9 @@
 
 #include "tsc.h"
 
+
+#include "tarallo.h"
+
 //------------------------------------------------------------------------------
 // Constants
 //------------------------------------------------------------------------------
@@ -658,7 +661,7 @@ void main(void)
         }
         SHORT_BARRIER;
         if (test_list[test_num].enabled) {
-            test_all_windows(my_cpu);
+            //test_all_windows(my_cpu);
         }
         SHORT_BARRIER;
         if (my_cpu != 0) {
@@ -734,6 +737,7 @@ void main(void)
             } else {
                 display_big_status(false);
             }
+            communication();
         }
     }
 }

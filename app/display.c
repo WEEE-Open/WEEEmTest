@@ -118,13 +118,13 @@ static void set_screen_palette(screen_palette_t *mt_palette)
             .footer_foreground = WHITE,
             .popup_background  = WHITE
         };
-    } else if (dark_mode) {
+    } else if (test_mode) {
         *mt_palette = (screen_palette_t){
-            .background        = BLACK,
+            .background        = ORANGE,
             .foreground        = WHITE,
             .title_background  = BLACK,
-            .title_foreground  = WHITE,
-            .footer_background = BLACK,
+            .title_foreground  = ORANGE,
+            .footer_background = ORANGE,
             .footer_foreground = WHITE,
             .popup_background  = WHITE
         };
@@ -516,38 +516,55 @@ void display_big_status(bool pass)
         return;
     }
 
+    bool test = true;
+
+
     save_screen_region(POP_STATUS_REGION, popup_status_save_buffer);
 
-    //set_background_colour(palette.popup_background);
-    //set_foreground_colour(pass ? GREEN : RED);
 
-    // set a red banner with withe text for a fail and a black banner with green text
-    if (pass) {
-        set_background_colour(palette.popup_background);
-        set_foreground_colour(GREEN);
+    if (test) { //Banner for testing
+        clear_screen_region(POP_STATUS_REGION);
+
+        prints(POP_STAT_R+1, POP_STAT_C+5, "#######  ########   #####    #######");
+        prints(POP_STAT_R+2, POP_STAT_C+5, "   #     ##        ##   ##      #   ");
+        prints(POP_STAT_R+3, POP_STAT_C+5, "   #     ##        ##           #   ");
+        prints(POP_STAT_R+4, POP_STAT_C+5, "   #     ######     #####       #   ");
+        prints(POP_STAT_R+5, POP_STAT_C+5, "   #     ##             ##      #   ");
+        prints(POP_STAT_R+6, POP_STAT_C+5, "   #     ##        ##   ##      #   ");
+        prints(POP_STAT_R+7, POP_STAT_C+5, "   #     ########   #####       #   ");
     } else {
-        set_background_colour(RED);
-        set_foreground_colour(WHITE);
-    }
 
-    clear_screen_region(POP_STATUS_REGION);
+        //set_background_colour(palette.popup_background);
+        //set_foreground_colour(pass ? GREEN : RED);
 
-    if (pass) {
-        prints(POP_STAT_R+1, POP_STAT_C+5, "######      ##      #####    #####  ");
-        prints(POP_STAT_R+2, POP_STAT_C+5, "##   ##    ####    ##   ##  ##   ## ");
-        prints(POP_STAT_R+3, POP_STAT_C+5, "##   ##   ##  ##   ##       ##      ");
-        prints(POP_STAT_R+4, POP_STAT_C+5, "######   ##    ##   #####    #####  ");
-        prints(POP_STAT_R+5, POP_STAT_C+5, "##       ########       ##       ## ");
-        prints(POP_STAT_R+6, POP_STAT_C+5, "##       ##    ##  ##   ##  ##   ## ");
-        prints(POP_STAT_R+7, POP_STAT_C+5, "##       ##    ##   #####    #####  ");
-    } else {
-        prints(POP_STAT_R+1, POP_STAT_C+5, "#######     ##      ######   ##     ");
-        prints(POP_STAT_R+2, POP_STAT_C+5, "##         ####       ##     ##     ");
-        prints(POP_STAT_R+3, POP_STAT_C+5, "##        ##  ##      ##     ##     ");
-        prints(POP_STAT_R+4, POP_STAT_C+5, "#####    ##    ##     ##     ##     ");
-        prints(POP_STAT_R+5, POP_STAT_C+5, "##       ########     ##     ##     ");
-        prints(POP_STAT_R+6, POP_STAT_C+5, "##       ##    ##     ##     ##     ");
-        prints(POP_STAT_R+7, POP_STAT_C+5, "##       ##    ##   ######   ###### ");
+        // set a red banner with withe text for a fail and a black banner with green text
+        if (pass) {
+            set_background_colour(palette.popup_background);
+            set_foreground_colour(GREEN);
+        } else {
+            set_background_colour(RED);
+            set_foreground_colour(WHITE);
+        }
+
+        clear_screen_region(POP_STATUS_REGION);
+
+        if (pass) {
+            prints(POP_STAT_R+1, POP_STAT_C+5, "######      ##      #####    #####  ");
+            prints(POP_STAT_R+2, POP_STAT_C+5, "##   ##    ####    ##   ##  ##   ## ");
+            prints(POP_STAT_R+3, POP_STAT_C+5, "##   ##   ##  ##   ##       ##      ");
+            prints(POP_STAT_R+4, POP_STAT_C+5, "######   ##    ##   #####    #####  ");
+            prints(POP_STAT_R+5, POP_STAT_C+5, "##       ########       ##       ## ");
+            prints(POP_STAT_R+6, POP_STAT_C+5, "##       ##    ##  ##   ##  ##   ## ");
+            prints(POP_STAT_R+7, POP_STAT_C+5, "##       ##    ##   #####    #####  ");
+        } else {
+            prints(POP_STAT_R+1, POP_STAT_C+5, "#######     ##      ######   ##     ");
+            prints(POP_STAT_R+2, POP_STAT_C+5, "##         ####       ##     ##     ");
+            prints(POP_STAT_R+3, POP_STAT_C+5, "##        ##  ##      ##     ##     ");
+            prints(POP_STAT_R+4, POP_STAT_C+5, "#####    ##    ##     ##     ##     ");
+            prints(POP_STAT_R+5, POP_STAT_C+5, "##       ########     ##     ##     ");
+            prints(POP_STAT_R+6, POP_STAT_C+5, "##       ##    ##     ##     ##     ");
+            prints(POP_STAT_R+7, POP_STAT_C+5, "##       ##    ##   ######   ###### ");
+        }
     }
 
     prints(POP_STAT_R+8, POP_STAT_C+5, "                                    ");

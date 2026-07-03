@@ -38,7 +38,7 @@ typedef enum {
     BLACK       = 0,
     BLUE        = 1,
     GREEN       = 2,
-    CYAN        = 3,
+    ORANGE        = 3,
     RED         = 4,
     MAUVE       = 5,
     YELLOW      = 6,
@@ -67,7 +67,7 @@ extern vga_buffer_t shadow_buffer;
  * Modifier that can be added to any foreground colour.
  * Has no effect on background colours.
  */
-#define BOLD        8
+#define BOLD        9
 
 /**
  * Initialise the display interface.
