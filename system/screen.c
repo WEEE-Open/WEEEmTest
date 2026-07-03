@@ -34,7 +34,7 @@ typedef struct {
     uint8_t     b;
 } __attribute__((packed)) rgb_value_t;
 
-static const rgb_value_t vga_pallete[18] = {
+static const rgb_value_t vga_pallete[16] = {
     //  R    G    B
     {   0,   0,   0 },  // BLACK
     {   0,   0, 170 },  // BLUE
@@ -51,7 +51,7 @@ static const rgb_value_t vga_pallete[18] = {
     { 255,  85,  85 },  // BOLD+RED
     { 255,  85, 255 },  // BOLD+MAUVE
     { 255, 255,  85 },  // BOLD+YELLOW
-    { 255, 255, 255 }  // BOLD+WHITE
+    { 255, 255, 255 }   // BOLD+WHITE
 };
 
 static vga_buffer_t *vga_buffer = NULL;
