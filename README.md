@@ -8,11 +8,13 @@ WEEEmTest is a fork of Memtest86+, with the only changes:
 - custom bootscreen
 - easy to download .iso
 - custom splash image for the grub menu
+- T.A.R.A.L.L.O. integration
 
 To recompile the x86_64 version just go to the folder (path: ~/build/x86_64/) and execute `make` and `make iso` (if on Linux be sure to have [xorriso](https://www.gnu.org/software/xorriso/) installed)
 
+To communicate with the ethernet port in bare-metal a huge thanks to the [ipxe](https://github.com/ipxe/ipxe) project from which we took the necessary drivers to communicate and the [uip](https://github.com/adamdunkels/uip) project to implement a client in `C` using the least amount of resources needed.
 
-For the rest i's just classic Memtest86+
+For the rest it's just classic Memtest86+
 
 # Memtest86+
 
