@@ -67,7 +67,7 @@ extern vga_buffer_t shadow_buffer;
  * Modifier that can be added to any foreground colour.
  * Has no effect on background colours.
  */
-#define BOLD        9
+#define BOLD        8
 
 /**
  * Initialise the display interface.

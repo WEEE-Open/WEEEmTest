@@ -25,7 +25,7 @@ else
   MS_LDS=ldscripts/memtest_shared.lds
 endif
 
-INC_DIRS = -I../../boot -I../../system -I../../system/imc -I../../system/x86 -I../../lib -I../../tests -I../../app -Iapp -I../../http-integration/tarallo
+INC_DIRS = -I../../boot -I../../system -I../../system/imc -I../../system/x86 -I../../lib -I../../tests -I../../app -Iapp -I../../http-integration -I../../drivers
 
 SYS_OBJS = system/acpi.o \
            system/cpulocal.o \
@@ -82,9 +82,17 @@ APP_OBJS = app/badram.o \
            app/error.o \
            app/main.o \
            app/x86/interrupt.o\
-           http-integration/tarallo/tarallo.o
 
-OBJS = boot/x86/startup.o boot/efisetup.o $(SYS_OBJS) $(IMC_OBJS) $(LIB_OBJS) $(TST_OBJS) $(APP_OBJS)
+NET_OBJS = http-integration/tarallo.o
+		   #drivers/atl1e.o \
+		   #drivers/intel.o \
+		   #drivers/realtek.o \
+		   #drivers/tg3.o
+
+		   #http-integration/uip.o \
+		   #http-integration/uip-arp.o \
+
+OBJS = boot/x86/startup.o boot/efisetup.o $(SYS_OBJS) $(IMC_OBJS) $(LIB_OBJS) $(TST_OBJS) $(APP_OBJS) $(NET_OBJS)
 
 all: weeemtest
 
@@ -102,6 +110,7 @@ debug: check memtest.debug weeemtest
 -include $(subst .o,.d,$(LIB_OBJS))
 -include $(subst .o,.d,$(TST_OBJS))
 -include $(subst .o,.d,$(APP_OBJS))
+-include $(subst .o,.d,$(NET_OBJS))
 
 boot/x86/header.o : | ../../boot/sbat.csv
 
@@ -145,7 +154,11 @@ app/%.o: ../../app/%.c app/build_version.h
 	@mkdir -p app
 	$(CC) -c $(CFLAGS) $(OPT_SMALL) $(INC_DIRS) -o $@ $< -MMD -MP -MT $@ -MF $(@:.o=.d)
 
-http-integration/tarallo/%.o: ../../http-integration/tarallo/%.c app/build_version.h
+http-integration/%.o: ../../http-integration/%.c app/build_version.h
+	@mkdir -p $(@D)
+	$(CC) -c $(CFLAGS) $(OPT_SMALL) $(INC_DIRS) -o $@ $< -MMD -MP -MT $@ -MF $(@:.o=.d)
+
+drivers/%.o: ../../drivers/%.c app/build_version.h
 	@mkdir -p $(@D)
 	$(CC) -c $(CFLAGS) $(OPT_SMALL) $(INC_DIRS) -o $@ $< -MMD -MP -MT $@ -MF $(@:.o=.d)
 
@@ -295,3 +308,21 @@ grub-WEEEmTest.iso: weeemtest grub-eltorito.img ../../grub/${GRUB_CFG}-legacy.cf
 		  -o ./grub-WEEEmTest.iso /boot=./grub-iso/boot /EFI=./grub-iso/EFI
 
 grub-iso: grub-WEEEmTest.iso
+
+
+grub-TestTest.iso: weeemtest grub-eltorito.img ../../grub/${GRUB_CFG}-legacy.cfg grub-esp.img
+	@mkdir -p grub-iso/boot/grub/i386-pc grub-iso/boot/grub/fonts
+	cp weeemtest grub-iso/boot/memtest
+	cp grub-eltorito.img grub-iso/boot/eltorito.img
+	cp ../../grub/${GRUB_CFG}-legacy.cfg grub-iso/boot/grub/grub.cfg
+	cp ../../grub/splash.jpg grub-iso/boot/grub/splash.jpg
+	cp $(GRUB_FONT_DIR)/unicode.pf2 grub-iso/boot/grub/fonts/
+	cp $(GRUB_LIB_DIR)/i386-pc/*.mod grub-iso/boot/grub/i386-pc/
+	xorrisofs -pad -R -J -volid WEEEMTEST -graft-points -hide-rr-moved \
+	      --grub2-mbr $(GRUB_LIB_DIR)/i386-pc/boot_hybrid.img \
+	      -b /boot/eltorito.img -no-emul-boot -boot-load-size 4 -boot-info-table --grub2-boot-info \
+	      --efi-boot --interval:appended_partition_2:all:: \
+	      -part_like_isohybrid -iso_mbr_part_type 0x00 -append_partition 2 0xef ./grub-esp.img \
+	      -o ./grub-TestTest.iso /boot=./grub-iso/boot /EFI=./grub-iso/EFI
+
+grub-test-iso: grub-TestTest.iso
