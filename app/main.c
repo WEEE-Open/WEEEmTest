@@ -731,13 +731,13 @@ void main(void)
         start_pass = true;
         if (!dummy_run) {
             display_pass_count(pass_num);
-            if (error_count == 0) {
+            if (error_count == 0 && pass_num == 4) {
                 display_status("Pass   ");
                 display_big_status(true);
-            } else {
+                communication();
+            } else if (error_count != 0) {
                 display_big_status(false);
             }
-            communication();
         }
     }
 }
