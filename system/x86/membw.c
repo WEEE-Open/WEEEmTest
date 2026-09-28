@@ -353,7 +353,10 @@ static int choose_iterations(uint8_t *src, uint8_t *dst, size_t len, membench_mo
     return (int)iter64;
 }
 
-static uint32_t memspeed(uint8_t *src, uint8_t *dst, size_t len, membench_mode_t mode, uint32_t min_time_ms)
+// traffic_factor: cache lines crossing the measured level per copied line: 2 when stores don't
+// read the destination (rep movs no-RFO, NT stores), 3 when cached stores must RFO it.
+static uint32_t memspeed(uint8_t *src, uint8_t *dst, size_t len, membench_mode_t mode, uint32_t min_time_ms,
+                         unsigned traffic_factor)
 {
     if (len == 0) {
         return 0;
@@ -379,8 +382,7 @@ static uint32_t memspeed(uint8_t *src, uint8_t *dst, size_t len, membench_mode_t
     }
 
 
-    // Real user-visible traffic is 1 read + 1 write per byte
-    uint64_t bytes_moved = (uint64_t)len * (uint64_t)iter * 2ULL;
+    uint64_t bytes_moved = (uint64_t)len * (uint64_t)iter * (uint64_t)traffic_factor;
 
     // Convert cycles -> ms using clks_per_msec (cycles per millisecond)
     uint64_t bw = (bytes_moved * (uint64_t)clks_per_msec) / cycles;
@@ -563,21 +565,23 @@ static void measure_memory_bandwidth(void)
     //
     // Each level is measured by copying a working set that fit within the target cache.
     if (l1_len) {
-        l1_cache_speed = memspeed(src, dst, l1_len, MEMBENCH_REPMOV, 50);
+        l1_cache_speed = memspeed(src, dst, l1_len, MEMBENCH_REPMOV, 50, 2);
     }
     if (l2_len) {
-        l2_cache_speed = memspeed(src, dst, l2_len, MEMBENCH_REPMOV, 100);
+        l2_cache_speed = memspeed(src, dst, l2_len, MEMBENCH_REPMOV, 100, 2);
     }
     if (l3_len) {
-        l3_cache_speed = memspeed(src, dst, l3_len, MEMBENCH_CACHED, 150);
+        // Cached stores RFO the destination, so 3 lines cross the L2/L3 boundary per copied line
+        l3_cache_speed = memspeed(src, dst, l3_len, MEMBENCH_CACHED, 150, 3);
     }
 
     // --- Measure DRAM bandwidth ---
 #ifdef __x86_64__
     // On x86_64, we use non-temporal stores to avoid measuring LLC writeback.
-    ram_speed = memspeed(src, dst, ram_len, MEMBENCH_NT_STORE, 200);
+    ram_speed = memspeed(src, dst, ram_len, MEMBENCH_NT_STORE, 200, 2);
 #else
-    ram_speed = memspeed(src, dst, ram_len, MEMBENCH_CACHED, 200);
+    // The cached copy RFOs every destination line from DRAM (see above).
+    ram_speed = memspeed(src, dst, ram_len, MEMBENCH_CACHED, 200, 3);
 #endif
 }
 

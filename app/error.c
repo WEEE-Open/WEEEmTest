@@ -14,6 +14,7 @@
 #include <limits.h>
 
 #include "smp.h"
+
 #include "vmem.h"
 
 #include "badram.h"
@@ -25,6 +26,7 @@
 #include "serial.h"
 #include "memctrl.h"
 #include "error.h"
+#include "reports.h"
 
 //------------------------------------------------------------------------------
 // Constants
@@ -202,6 +204,8 @@ static void common_err(error_type_t type, uintptr_t addr, testword_t good, testw
                 test_list[test_num].errors++;
             }
         }
+        static const char * const log_type[] = { "addr", "data", "parity", "uecc", "ecc" };
+        serial_log_error(log_type[type], page, offset, good, bad);
     }
 
     switch (error_mode) {
@@ -276,7 +280,11 @@ static void common_err(error_type_t type, uintptr_t addr, testword_t good, testw
 #endif
         }
         if (new_address) {
-            check_input();
+            // Only the master CPU may poll the keyboard: polling from other
+            // CPUs would race the master's polling.
+            if (smp_my_cpu_num() == master_cpu) {
+                check_input();
+            }
             scroll();
 
             set_foreground_colour(YELLOW);
@@ -407,4 +415,6 @@ void error_update(void)
             tty_error_redraw();
         }
     }
+
+    serial_log_tick();
 }

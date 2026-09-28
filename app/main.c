@@ -21,6 +21,7 @@
 #include "acpi.h"
 #include "cache.h"
 #include "cpuid.h"
+#include "cpulocal.h"
 #include "cpuinfo.h"
 #include "heap.h"
 #include "hwctrl.h"
@@ -33,6 +34,7 @@
 #include "pci.h"
 #include "screen.h"
 #include "serial.h"
+#include "simd.h"
 #include "smbios.h"
 #include "smp.h"
 #include "temperature.h"
@@ -45,6 +47,7 @@
 #include "config.h"
 #include "display.h"
 #include "error.h"
+#include "reports.h"
 #include "test.h"
 
 #include "tests.h"
@@ -63,9 +66,16 @@
 #define TEST_INTERRUPT      0
 #endif
 
+#if defined(__aarch64__)
+// RAM may start well above physical address 0, so the load limits are
+// computed at run time, relative to the start of RAM (check global_init)
+#define LOW_LOAD_LIMIT      low_load_limit
+#define HIGH_LOAD_LIMIT     high_load_limit
+#else
 #define LOW_LOAD_LIMIT      SIZE_C(4,MB)  // must be a multiple of the page size
 
 #define HIGH_LOAD_LIMIT     (VM_PINNED_SIZE << PAGE_SHIFT)
+#endif
 
 //------------------------------------------------------------------------------
 // Private Variables
@@ -163,6 +173,10 @@ static void run_at(uintptr_t addr, int my_cpu)
             memcpy((void *)(addr + locals_offset), (void *)(_start + locals_offset), LOCALS_SIZE);
             locals_offset += AP_STACK_SIZE;
         }
+#if defined(__aarch64__)
+        // Make the copied code visible to instruction fetch.
+        cache_sync_code_range((void *)addr, (void *)(addr + (_stacks - _start)));
+#endif
     }
     LONG_BARRIER;
 
@@ -171,15 +185,67 @@ static void run_at(uintptr_t addr, int my_cpu)
     // The 32-bit startup code needs to know where it is located.
     __asm__ __volatile__("movl %0, %%edi; jmp *%0" : : "r" (new_start_addr));
     __builtin_unreachable();
+#elif defined(__aarch64__)
+    // Discard any instructions speculatively fetched before the I-cache invalidation.
+    __asm__ __volatile__("isb");
+    ((void (*)(void))new_start_addr)();
 #else
     ((void (*)(void))new_start_addr)(); // Formerly a non-portable construct: goto *new_start_addr;
 #endif
 }
 
+// A BSP-only version of run_at(), used before the APs have been started. The
+// thread-local storage is zeroed, as its original copy may not be backed by RAM.
+static void relocate_to(uintptr_t addr)
+{
+    uintptr_t *new_start_addr = (uintptr_t *)(addr + startup - _start);
+
+    // Copy the program code and all data except the stacks.
+    memmove((void *)addr, (void *)_start, _stacks - _start);
+    // Zero the thread-local storage.
+    size_t locals_offset = _stacks - _start + BSP_STACK_SIZE - LOCALS_SIZE;
+    for (int cpu_num = 0; cpu_num < num_available_cpus; cpu_num++) {
+        memset((void *)(addr + locals_offset), 0, LOCALS_SIZE);
+        locals_offset += AP_STACK_SIZE;
+    }
+#if defined(__aarch64__)
+    // Make the copied code visible to instruction fetch.
+    cache_sync_code_range((void *)addr, (void *)(addr + (_stacks - _start)));
+#endif
+
+    // Jump to new_start_addr.
+#ifdef __i386__
+    // The 32-bit startup code needs to know where it is located.
+    __asm__ __volatile__("movl %0, %%edi; jmp *%0" : : "r" (new_start_addr));
+    __builtin_unreachable();
+#elif defined(__aarch64__)
+    // Discard any instructions speculatively fetched before the I-cache invalidation.
+    __asm__ __volatile__("isb");
+    ((void (*)(void))new_start_addr)();
+#else
+    ((void (*)(void))new_start_addr)();
+#endif
+}
+
+// Checks that the given address range lies entirely within a single region of
+// usable RAM (the BIOS bootloader may have loaded us straddling the VGA/ROM hole).
+static bool addr_range_is_usable(uintptr_t start, size_t size)
+{
+    for (int i = 0; i < pm_map_size; i++) {
+        uintptr_t region_start = pm_map[i].start << PAGE_SHIFT;
+        uintptr_t region_end   = pm_map[i].end   << PAGE_SHIFT;
+        if (start >= region_start && (start + size) <= region_end) {
+            return true;
+        }
+    }
+    return false;
+}
+
 static bool set_load_addr(uintptr_t *load_addr, size_t program_size, uintptr_t lower_limit, uintptr_t upper_limit)
 {
     uintptr_t current_start = (uintptr_t)_start;
-    if (current_start >= lower_limit && (current_start + program_size) <= upper_limit) {
+    if (current_start >= lower_limit && (current_start + program_size) <= upper_limit
+        && addr_range_is_usable(current_start, program_size)) {
         *load_addr = current_start;
         return true;
     }
@@ -205,9 +271,20 @@ static bool set_load_addr(uintptr_t *load_addr, size_t program_size, uintptr_t l
 
 static void global_init(void)
 {
+    // Set once initialisation is complete; the early relocation below
+    // restarts the program and re-enters here.
+    static bool init_complete = false;
+    if (init_complete) {
+        return;
+    }
+
     floppy_off();
 
     cpuid_init();
+
+    simd_init();
+
+    test_list_init();
 
     // Nothing before this should access the boot parameters, in case they are located above 4GB.
     // This is the first region we map, so it is guaranteed not to fail.
@@ -242,6 +319,8 @@ static void global_init(void)
     memctrl_init();
 
     tty_init();
+
+    serial_log_start();
 
     smp_init(smp_enabled);
 
@@ -309,6 +388,9 @@ static void global_init(void)
     for (int i = 0; i < pm_map_size; i++) {
         trace(0, "pm %0*x - %0*x", 2*sizeof(uintptr_t), pm_map[i].start, 2*sizeof(uintptr_t), pm_map[i].end);
     }
+    if (paging_incomplete) {
+        trace(0, "WARNING: page table pool exhausted, some address ranges are not mapped");
+    }
     if (acpi_config.rsdp_addr != 0) {
         trace(0, "ACPI RSDP (v%u.%u) found in %s at %0*x", acpi_config.ver_maj, acpi_config.ver_min, rsdp_source, 2*sizeof(uintptr_t), acpi_config.rsdp_addr);
         trace(0, "ACPI FADT found at %0*x", 2*sizeof(uintptr_t), acpi_config.fadt_addr);
@@ -330,6 +412,20 @@ static void global_init(void)
     start_run = true;
     dummy_run = true;
     restart = false;
+
+    init_complete = true;
+
+    // If the bootloader placed us so that the stack area extends beyond usable RAM,
+    // move before the APs start; avoid a target that overlaps the running code.
+    uintptr_t current_start = (uintptr_t)_start;
+    if (!addr_range_is_usable(current_start, program_size)) {
+        uintptr_t target = low_load_addr;
+        if (target < (current_start + program_size) && current_start < (target + program_size)) {
+            target = high_load_addr;
+        }
+        trace(0, "relocating to %0*x before starting CPUs", 2*sizeof(uintptr_t), target);
+        relocate_to(target);
+    }
 }
 
 static void ap_enumerate(int my_cpu)
@@ -396,6 +492,9 @@ static void setup_vm_map(uintptr_t win_start, uintptr_t win_end)
                 uint64_t new_end;
 
                 while (1) {
+                    if (vm_map_size >= MAX_MEM_SEGMENTS) {
+                        break;
+                    }
                     if (smp_narrow_to_proximity_domain(orig_start, orig_end, &proximity_domain_idx, &new_start, &new_end)) {
                         // Create a new entry in the virtual memory map.
                         num_mapped_pages += (new_end - new_start) >> PAGE_SHIFT;
@@ -447,6 +546,10 @@ static void test_all_windows(int my_cpu)
         }
     }
     if (i_am_master) {
+        // CPUs not taking part in this test won't re-arm their stack
+        // canaries, and the coming relocations will invalidate them.
+        stack_canary_disarm_all();
+
         num_active_cpus = 1;
         if (!dummy_run) {
             if (parallel_test) {
@@ -509,7 +612,13 @@ static void test_all_windows(int my_cpu)
                 break;
               case 1:
                 window_start = (LOW_LOAD_LIMIT >> PAGE_SHIFT);
+#if defined(__aarch64__)
+                // LOW_LOAD_LIMIT may be above VM_WINDOW_SIZE. End the window
+                // at the next window boundary to avoid recheck the region containing the low copy.
+                window_end   = (window_start + VM_WINDOW_SIZE) & ~(VM_WINDOW_SIZE - 1);
+#else
                 window_end   = VM_WINDOW_SIZE;
+#endif
                 break;
               default:
                 window_start = window_end;
@@ -624,6 +733,7 @@ void main(void)
                     display_start_run();
                     badram_init();
                     error_init();
+                    serial_log_run_start();
                 }
             }
             if (start_pass) {
@@ -633,6 +743,7 @@ void main(void)
                     ticks_per_pass[pass_num] = 0;
                 } else {
                     display_start_pass();
+                    serial_log_event(SLOG_PASS_START);
                 }
             }
             if (start_test) {
@@ -643,6 +754,7 @@ void main(void)
                     ticks_per_test[pass_num][test_num] = 0;
                 } else if (test_list[test_num].enabled) {
                     display_start_test();
+                    serial_log_event(SLOG_TEST_START);
                 }
                 bail = false;
             }
@@ -710,6 +822,8 @@ void main(void)
 
         if (dummy_run) {
             ticks_per_pass[pass_num] += ticks_per_test[pass_num][test_num];
+        } else if (test_list[test_num].enabled) {
+            serial_log_event(SLOG_TEST_END);
         }
 
         start_test = true;
@@ -718,6 +832,9 @@ void main(void)
             continue;
         }
 
+        if (!dummy_run) {
+            serial_log_event(SLOG_PASS_END);
+        }
         pass_num++;
         if (dummy_run && pass_num == NUM_PASS_TYPES) {
             start_run = true;

@@ -175,10 +175,8 @@ static const amd_tctl_offset_t amd_tctl_offset_table[] = {
     { 0x8, 0x0, -27.0f, "AMD Ryzen Threadripper 19" },  // Whitehaven (1900X/1920X/1950X)
     { 0x8, 0x0, -27.0f, "AMD Ryzen Threadripper 29" },  // Colfax (29x0X/29x0WX)
     { 0x8, 0x0, -27.0f, "AMD EPYC 7"                },  // Naples (Family 17h, Model 01h)
-    //{ 0xA, 0xA, -49.0f, "AMD EPYC 8"                },  // Siena (Maybe needed)
-    //{ 0xA, 0x1, -49.0f, "AMD EPYC 9"                },  // Genoa (Maybe needed)
-    { 0xB, 0x0, -49.0f, "AMD EPYC 9"                },  // Turin (Family 19h, Model 11h)
-    // Other EPYC parts report Tdie directly using the bit-19 (T_OFFSET_PRESENT) path.
+    // EPYC Milan/Genoa/Siena/Turin need no entry here: their -49 °C range shift
+    // is detected generically via CUR_TEMP_RANGE_SEL / CUR_TEMP_TJ_SEL in cpu_temp_init().
 };
 
 static void amd_zen_apply_tctl_offset(void)
@@ -201,6 +199,44 @@ static void amd_zen_apply_tctl_offset(void)
     }
 }
 
+// AMD dual-CCD X3D CPUs pair one 96MB V-Cache CCD with one 32MB standard CCD.
+// CPUID leaf 0x80000006 cannot describe this asymmetric layout: it reports the
+// boot CCD's 96MB L3 scaled by the CCD count (192MB) instead of the real 128MB.
+typedef struct {
+    uint8_t      ext_family;
+    uint8_t      ext_model;
+    char         brand_prefix[CPUID_BRAND_STR_LENGTH];
+} amd_x3d_dual_ccd_t;
+
+static const amd_x3d_dual_ccd_t amd_x3d_dual_ccd_table[] = {
+    { 0xA, 0x6, "AMD Ryzen 9 7900X3D"  },   // Raphael       (Family 19h, Model 61h)
+    { 0xA, 0x6, "AMD Ryzen 9 7950X3D"  },   // Raphael       (Family 19h, Model 61h)
+    { 0xA, 0x6, "AMD Ryzen 9 7945HX3D" },   // Dragon Range  (Family 19h, Model 61h)
+    { 0xB, 0x4, "AMD Ryzen 9 9900X3D"  },   // Granite Ridge (Family 1Ah, Model 44h)
+    { 0xB, 0x4, "AMD Ryzen 9 9950X3D"  },   // Granite Ridge (Family 1Ah, Model 44h)
+    // Symmetric X3D parts report their L3 correctly: keep out the single-CCD
+    // 5800X3D/7600X3D/7800X3D/9800X3D (96MB) and the dual V-Cache 9950X3D2 (192MB).
+};
+
+static bool is_amd_dual_ccd_x3d(void)
+{
+    const char *brand = cpuid_info.brand_id.str;
+
+    for (size_t i = 0; i < sizeof(amd_x3d_dual_ccd_table) / sizeof(amd_x3d_dual_ccd_table[0]); i++) {
+        const amd_x3d_dual_ccd_t *e = &amd_x3d_dual_ccd_table[i];
+        const size_t len = strlen(e->brand_prefix);
+
+        // Whole-token match, so "9950X3D" doesn't catch the "9950X3D2".
+        if (e->ext_family == cpuid_info.version.extendedFamily
+            && e->ext_model == cpuid_info.version.extendedModel
+            && strncmp(brand, e->brand_prefix, len) == 0
+            && (brand[len] == ' ' || brand[len] == '\0')) {
+            return true;
+        }
+    }
+    return false;
+}
+
 static void loongson_7a00_ehci_workaround(void)
 {
     uintptr_t reg_addr = 0x10010000;
@@ -215,6 +251,19 @@ static void loongson_7a00_ehci_workaround(void)
     write32((uint32_t *)(reg_addr + 0x3180), 0xFFFFFFFF);
     write8((uint8_t *)(reg_addr + 0x3820), 0x0);
     write8((uint8_t *)(reg_addr + 0x3830), 0x0);
+}
+
+static void via_vt823x_ehci_workaround(void)
+{
+    // Stretch the EHCI MMIO sleep timer from 1us to 10us (bit 5 of config reg 0x4B)
+    // so bulk DMA can't saturate the PCI bus until devices stop answering.
+    for (int func = 3; func <= 4; func++) {         // VT8235 is 00:10.3, VT8237 00:10.4
+        if (pci_config_read16(0, 0x10, func, PCI_VID_REG) == PCI_VID_VIA
+        &&  pci_config_read16(0, 0x10, func, PCI_DID_REG) == 0x3104) {   // VIA EHCI
+            pci_config_write8(0, 0x10, func, 0x4b,
+                              pci_config_read8(0, 0x10, func, 0x4b) | 0x20);
+        }
+    }
 }
 
 
@@ -381,6 +430,18 @@ void quirks_init(void)
         quirk.process = amd_zen_apply_tctl_offset;
     }
 
+    //  -----------------------------------------------
+    //  -- AMD Dual-CCD Asymmetric L3 cache size fix --
+    //  -----------------------------------------------
+    if (cpuid_info.vendor_id.str[0] == 'A' && cpuid_info.version.family == 0xF
+        && cpuid_info.version.extendedFamily >= 0xA
+        && l3_cache == 192 * 1024 && is_amd_dual_ccd_x3d()) {
+
+        quirk.id = QUIRK_AMD_X3D_L3_SIZE;
+        quirk.type |= QUIRK_TYPE_CPUID;
+        l3_cache = 128 * 1024;      // 96MB (V-Cache CCD) + 32MB (standard CCD)
+    }
+
     //  -----------------------------------------------------------
     //  -- Loongson 7A1000 and 7A2000 chipset USB 2.0 workaround --
     //  -----------------------------------------------------------
@@ -389,6 +450,18 @@ void quirks_init(void)
             quirk.id    = QUIRK_LOONGSON7A00_EHCI_WORKARD;
             quirk.type |= QUIRK_TYPE_USB;
             quirk.process = loongson_7a00_ehci_workaround;
+        }
+    }
+
+    //  ------------------------------------------------------
+    //  -- VIA VT8235/37 EHCI PCI bus starvation workaround --
+    //  ------------------------------------------------------
+    if (quirk.root_vid == PCI_VID_VIA) {
+        if (pci_config_read16(0, 0x10, 3, PCI_DID_REG) == 0x3104
+        ||  pci_config_read16(0, 0x10, 4, PCI_DID_REG) == 0x3104) {
+            quirk.id    = QUIRK_VIA_VT823X_EHCI;
+            quirk.type |= QUIRK_TYPE_USB;
+            quirk.process = via_vt823x_ehci_workaround;
         }
     }
 

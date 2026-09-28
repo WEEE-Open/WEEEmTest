@@ -84,10 +84,40 @@ void heap_init(void)
     uintptr_t max_segment_size = 0;
 #if defined(__i386__) || defined (__x86_64__)
     uintptr_t low_memory_heap = PAGE_C(1, MB);
+    uintptr_t heap_limit = PAGE_C(4,GB);
 #elif defined(__loongarch_lp64)
     uintptr_t low_memory_heap = PAGE_C(256, MB);
+    uintptr_t heap_limit = PAGE_C(4,GB);
+#elif defined(__aarch64__)
+    // RAM may start well above 0, so make the heap limits relative to the
+    // start of RAM. If RAM starts below 3GB, keep the heap below an absolute
+    // 3GB: some SoCs cannot DMA above it (e.g. BCM2712 USB on Raspberry Pi 5).
+    uintptr_t low_memory_heap = pm_map[0].start + PAGE_C(256, MB);
+    uintptr_t heap_limit;
+    if (pm_map[0].start < PAGE_C(3,GB)) {
+        heap_limit = PAGE_C(3,GB);
+    } else {
+        heap_limit = pm_map[0].start + PAGE_C(4,GB);
+    }
+
+    // If a memory segment straddles the heap limit, split it at the limit, so
+    // the scan below can assign a heap even when RAM is one contiguous region.
+    for (int i = 0; i < pm_map_size; i++) {
+        if (pm_map[i].start < heap_limit && pm_map[i].end > heap_limit) {
+            if (pm_map_size < MAX_MEM_SEGMENTS) {
+                for (int j = pm_map_size; j > i + 1; j--) {
+                    pm_map[j] = pm_map[j - 1];
+                }
+                pm_map[i + 1].start = heap_limit;
+                pm_map[i + 1].end   = pm_map[i].end;
+                pm_map[i].end       = heap_limit;
+                pm_map_size++;
+            }
+            break;
+        }
+    }
 #endif
-    for (int i = 0; i < pm_map_size && pm_map[i].end <= PAGE_C(4,GB); i++) {
+    for (int i = 0; i < pm_map_size && pm_map[i].end <= heap_limit; i++) {
         uintptr_t try_heap_start = pm_map[i].start;
         uintptr_t try_heap_end   = pm_map[i].end;
         if (program_start >= try_heap_start && program_end <= try_heap_end) {
@@ -106,4 +136,13 @@ void heap_init(void)
             heaps[HEAP_TYPE_HM_1].end     = try_heap_end;
         }
     }
+
+#if defined(__aarch64__)
+    // There is no low-memory addressing constraint on this architecture, so
+    // if no segment small enough for the low-memory heap was found (RAM is
+    // typically one big contiguous region), just use the high-memory heap.
+    if (heaps[HEAP_TYPE_LM_1].segment < 0) {
+        heaps[HEAP_TYPE_LM_1] = heaps[HEAP_TYPE_HM_1];
+    }
+#endif
 }

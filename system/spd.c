@@ -1,13 +1,15 @@
 // SPDX-License-Identifier: GPL-2.0
-// Copyright (C) 2004-2025 Sam Demeulemeester
+// Copyright (C) 2004-2026 Sam Demeulemeester
 
 #include "stdbool.h"
 #include "stdint.h"
 #include "string.h"
 
+#include "config.h"
+#include "display.h"
+
 #include "i2c_x86.h"
 #include "spd.h"
-#include "jedec_id.h"
 #include "print.h"
 
 /** Rounding factors for timing computation
@@ -21,16 +23,55 @@
 
 ram_info_t ram = { 0, 0, 0, 0, 0, 0, "N/A"};
 ram_slot_info_t ram_slot_info[MAX_SPD_SLOT];
+spd_info spd_slot_cache[MAX_SPD_SLOT];
+
+// spd_info.type is an inline array, not a pointer: a literal pointer stored in this
+// BSS cache would have no relocation record and go stale after a program relocation.
+#define set_spd_type(spdi, t)   memcpy((spdi)->type, t, sizeof(t))
 
 static inline uint8_t bcd_to_ui8(uint8_t bcd)
 {
     return bcd - 6 * (bcd >> 4);
 }
 
+// The manufacturer list is stored as a code array plus a string table of the
+// same order, instead of an array of {code, char *} pairs: this avoids one
+// pointer and one runtime relocation record per entry.
+#define ENTRY(id, name) id,
+static const uint16_t jep106_codes[] = {
+#include "jedec_id.h"
+};
+#undef ENTRY
+
+#define ENTRY(id, name) name "\0"
+static const char jep106_names[] =
+#include "jedec_id.h"
+;
+#undef ENTRY
+
+#define JEP106_CNT (sizeof(jep106_codes) / sizeof(jep106_codes[0]))
+
+const char *get_jep106_name(uint16_t jedec_code)
+{
+    const char *name = jep106_names;
+
+    for (uint16_t i = 0; i < JEP106_CNT; i++) {
+        if (jedec_code == jep106_codes[i]) {
+            return name;
+        }
+        // Skip to the next string. Few bytes saved at -Os
+        // Was: "name += strlen(name) + 1".
+       while (*name) {
+            name++;
+        }
+        name++;
+    }
+    return NULL;
+}
+
 void print_spdi(spd_info spdi, uint8_t row)
 {
     uint8_t curcol;
-    uint16_t i;
 
     // Print Slot Index, Module Size, type & Max frequency (Jedec or XMP)
     curcol = printf(row, 0, " - Slot %i: %kB %s-%i",
@@ -38,6 +79,13 @@ void print_spdi(spd_info spdi, uint8_t row)
                     spdi.module_size * 1024,
                     spdi.type,
                     spdi.freq);
+
+    // Flag modules with an invalid SPD checksum/CRC
+    if (spdi.hasBadCRC) {
+        set_foreground_colour(BOLD + RED);
+        curcol = prints(row, ++curcol, "BAD CRC!");
+        set_foreground_colour(palette.foreground);
+    }
 
     // Print ECC status
     if (spdi.hasECC) {
@@ -51,18 +99,14 @@ void print_spdi(spd_info spdi, uint8_t row)
         curcol = prints(row, ++curcol, "EPP");
     }
 
-    // Print Manufacturer from JEDEC106
-    for (i = 0; i < JEP106_CNT; i++) {
-        if (spdi.jedec_code == jep106[i].jedec_code) {
-            curcol = printf(row, ++curcol, "- %s", jep106[i].name);
-            break;
-        }
-    }
+    // Print Manufacturer from JEDEC106, or the raw JEDEC ID if not in the table
+    const char *manufacturer = get_jep106_name(spdi.jedec_code);
 
-    // If not present in JEDEC106, display raw JEDEC ID
-    if (spdi.jedec_code == 0) {
+    if (manufacturer != NULL) {
+        curcol = printf(row, ++curcol, "- %s", manufacturer);
+    } else if (spdi.jedec_code == 0) {
         curcol = prints(row, ++curcol, "- Noname");
-    } else if (i == JEP106_CNT) {
+    } else {
         curcol = printf(row, ++curcol, "- Unknown (0x%x)", spdi.jedec_code);
     }
 
@@ -83,7 +127,7 @@ void print_spdi(spd_info spdi, uint8_t row)
     }
 
     // Populate global ram var
-    ram.type = spdi.type;
+    memcpy(ram.type, spdi.type, sizeof(ram.type));
     if (ram.freq == 0 || ram.freq > spdi.freq) {
         ram.freq = spdi.freq;
     }
@@ -122,7 +166,7 @@ static void read_sku(char *sku, uint8_t slot_idx, uint16_t offset, uint8_t max_l
 
 static void parse_spd_ddr5(spd_info *spdi, uint8_t slot_idx)
 {
-    spdi->type = "DDR5";
+    set_spd_type(spdi, "DDR5");
 
     // Compute module size for symmetric & asymmetric configuration
     for (int sbyte_adr = 1; sbyte_adr <= 2; sbyte_adr++) {
@@ -305,7 +349,7 @@ static void parse_spd_ddr5(spd_info *spdi, uint8_t slot_idx)
 
 static void parse_spd_ddr4(spd_info *spdi, uint8_t slot_idx)
 {
-    spdi->type = "DDR4";
+    set_spd_type(spdi, "DDR4");
 
     // Compute module size in MB with shifts
     spdi->module_size = 1U << (
@@ -426,7 +470,7 @@ static void parse_spd_ddr4(spd_info *spdi, uint8_t slot_idx)
 
 static void parse_spd_ddr3(spd_info *spdi, uint8_t slot_idx)
 {
-    spdi->type = "DDR3";
+    set_spd_type(spdi, "DDR3");
 
     // Compute module size in MB with shifts
     spdi->module_size = 1U << (
@@ -585,7 +629,7 @@ static void parse_spd_ddr3(spd_info *spdi, uint8_t slot_idx)
 
 static void parse_spd_ddr2(spd_info *spdi, uint8_t slot_idx)
 {
-    spdi->type = "DDR2";
+    set_spd_type(spdi, "DDR2");
 
     // Compute module size in MB
     switch (get_spd(slot_idx, 31)) {
@@ -724,7 +768,7 @@ static void parse_spd_ddr2(spd_info *spdi, uint8_t slot_idx)
 
 static void parse_spd_ddr(spd_info *spdi, uint8_t slot_idx)
 {
-    spdi->type = "DDR";
+    set_spd_type(spdi, "DDR");
 
     // Compute module size in MB
     switch (get_spd(slot_idx, 31)) {
@@ -815,7 +859,7 @@ static void parse_spd_ddr(spd_info *spdi, uint8_t slot_idx)
 
 static void parse_spd_rdram(spd_info *spdi, uint8_t slot_idx)
 {
-    spdi->type = "RDRAM";
+    set_spd_type(spdi, "RDRAM");
 
     // Compute module size in MB
     uint8_t tbyte = get_spd(slot_idx, 5);
@@ -890,7 +934,7 @@ static void parse_spd_rdram(spd_info *spdi, uint8_t slot_idx)
 
 static void parse_spd_sdram(spd_info *spdi, uint8_t slot_idx)
 {
-    spdi->type = "SDRAM";
+    set_spd_type(spdi, "SDRAM");
 
     uint8_t spd_byte3  = get_spd(slot_idx, 3) & 0x0F; // Number of Row Addresses (2 x 4 bits, upper part used if asymmetrical banking used)
     uint8_t spd_byte4  = get_spd(slot_idx, 4) & 0x0F; // Number of Column Addresses (2 x 4 bits, upper part used if asymmetrical banking used)
@@ -956,6 +1000,51 @@ static void parse_spd_sdram(spd_info *spdi, uint8_t slot_idx)
     spdi->isValid = true;
 }
 
+// JEDEC SPD CRC16 (XMODEM: poly 0x1021, init 0) over bytes [0, count)
+static uint16_t spd_crc16(uint8_t slot_idx, uint16_t count)
+{
+    uint16_t crc = 0;
+
+    for (uint16_t adr = 0; adr < count; adr++) {
+        crc ^= (uint16_t)get_spd(slot_idx, adr) << 8;
+        for (int i = 0; i < 8; i++) {
+            crc = (crc & 0x8000) ? (crc << 1) ^ 0x1021 : crc << 1;
+        }
+    }
+    return crc;
+}
+
+static bool spd_check_crc16(uint8_t slot_idx, uint16_t count, uint16_t crc_adr)
+{
+    uint16_t crc = get_spd(slot_idx, crc_adr) | (uint16_t)get_spd(slot_idx, crc_adr + 1) << 8;
+
+    return spd_crc16(slot_idx, count) == crc;
+}
+
+static bool spd_checksum_ok(uint8_t slot_idx, uint8_t spd_type)
+{
+    switch (spd_type)
+    {
+        case 0x12: // DDR5: CRC16 over bytes 0-509, stored at 510/511
+            return spd_check_crc16(slot_idx, 510, 510);
+        case 0x0C: // DDR4: base config bytes 0-125 only (block 1 CRC often unprogrammed)
+            return spd_check_crc16(slot_idx, 126, 126);
+        case 0x0B: // DDR3: byte0[7] set excludes mfg bytes 117-125 from coverage
+            return spd_check_crc16(slot_idx, (get_spd(slot_idx, 0) & 0x80) ? 117 : 126, 126);
+        case 0x08: // DDR2 / DDR / SDRAM: byte 63 = LSB of sum of bytes 0-62
+        case 0x07:
+        case 0x04: {
+            uint8_t sum = 0;
+            for (uint8_t adr = 0; adr < 63; adr++) {
+                sum += get_spd(slot_idx, adr);
+            }
+            return sum == get_spd(slot_idx, 63);
+        }
+        default:   // RDRAM & others: no checksum defined
+            return true;
+    }
+}
+
 void parse_spd(spd_info *spdi, uint8_t slot_idx)
 {
     memset(spdi, 0, sizeof(*spdi));     // Also sets isValid to False
@@ -964,7 +1053,9 @@ void parse_spd(spd_info *spdi, uint8_t slot_idx)
     if (get_spd(slot_idx, 0) == 0xFF)
         return;
 
-    switch(get_spd(slot_idx, 2))
+    uint8_t spd_type = get_spd(slot_idx, 2);
+
+    switch(spd_type)
     {
         case 0x12: // DDR5
             parse_spd_ddr5(spdi, slot_idx);
@@ -989,5 +1080,11 @@ void parse_spd(spd_info *spdi, uint8_t slot_idx)
                 parse_spd_rdram(spdi, slot_idx);
             }
             break;
+    }
+
+    // Verify twice on mismatch so a transient SMBUS misread can't flag a good module
+    if (enable_spd_crc && spdi->isValid
+        && !spd_checksum_ok(slot_idx, spd_type) && !spd_checksum_ok(slot_idx, spd_type)) {
+        spdi->hasBadCRC = true;
     }
 }

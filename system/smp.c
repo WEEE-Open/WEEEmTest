@@ -19,6 +19,12 @@
 #include <larchintrin.h>
 #endif
 
+#if defined(__aarch64__)
+#include "registers.h"
+#include "cache.h"
+#include "psci.h"
+#endif
+
 #include "acpi.h"
 #include "boot.h"
 #include "macros.h"
@@ -100,13 +106,20 @@
 
 #define MADT_PROCESSOR                 0
 #define MADT_LAPIC_ADDR                5
-#define MADT_PROCESSOR_X2APIC          9
+#define MADT_GICC                      11
 #define MADT_CORE_PIC                  17
+
+#define MADT_PROCESSOR_X2APIC          9
 
 // MADT processor flag values
 
 #define MADT_PF_ENABLED                0x1
 #define MADT_PF_ONLINE_CAPABLE         0x2
+
+// MADT GICC flag values
+
+#define MADT_GICC_ENABLED              0x1
+#define MADT_GICC_ONLINE_CAPABLE       0x8
 
 // SRAT entry types
 
@@ -130,6 +143,16 @@
 //------------------------------------------------------------------------------
 
 typedef volatile uint32_t apic_register_t[4];
+
+// The type used to identify a CPU core. On most architectures this is the
+// local APIC ID or equivalent. On ARM64 it is the (up to 40-bit) MPIDR
+// affinity value.
+
+#if defined(__aarch64__)
+typedef uint64_t cpu_apic_id_t;
+#else
+typedef uint32_t cpu_apic_id_t;
+#endif
 
 typedef struct __attribute__((packed)) {
     uint32_t proximity_domain_idx;
@@ -248,6 +271,26 @@ typedef struct {
 } madt_processor_entry_t;
 #pragma pack ()
 
+#elif defined(__aarch64__)
+
+typedef struct __attribute__((packed)) {
+    uint8_t     type;
+    uint8_t     length;
+    uint16_t    reserved1;
+    uint32_t    cpu_interface_num;
+    uint32_t    acpi_processor_uid;
+    uint32_t    flags;
+    uint32_t    parking_version;
+    uint32_t    performance_gsiv;
+    uint64_t    parked_address;
+    uint64_t    gicc_base;
+    uint64_t    gicv_base;
+    uint64_t    gich_base;
+    uint32_t    vgic_gsiv;
+    uint64_t    gicr_base;
+    uint64_t    mpidr;
+} madt_gicc_entry_t;
+
 #endif
 
 typedef struct {
@@ -312,11 +355,13 @@ typedef struct __attribute__((packed)) {
 // Private Variables
 //------------------------------------------------------------------------------
 
+#if !defined(__aarch64__)
 static apic_register_t   *apic = NULL;
+#endif
 
 static uint32_t          cpu_num_to_proximity_domain_idx[MAX_CPUS];
 
-static uint32_t          cpu_num_to_apic_id[MAX_CPUS];
+static cpu_apic_id_t     cpu_num_to_apic_id[MAX_CPUS];
 
 static memory_affinity_t memory_affinity_ranges[MAX_APIC_IDS];
 
@@ -329,7 +374,9 @@ static uintptr_t         smp_heap_page = 0;
 
 static uintptr_t         alloc_addr = 0;
 
+#if !defined(__aarch64__)
 static bool              apic_x2apic = false;
+#endif
 
 //------------------------------------------------------------------------------
 // Variables
@@ -345,6 +392,7 @@ uint8_t highest_map_bit = 0;
 // Private Functions
 //------------------------------------------------------------------------------
 
+#if !defined(__aarch64__)
 static int my_apic_id(void)
 {
 #if defined(__i386__) || defined(__x86_64__)
@@ -358,6 +406,7 @@ static int my_apic_id(void)
     return ((int)__csrrd_w(0x20));
 #endif
 }
+#endif
 
 #if defined(__i386__) || defined(__x86_64__)
 static void apic_write(int reg, uint32_t val)
@@ -513,6 +562,21 @@ static bool find_cpus_in_floating_mp_struct(void)
 }
 #endif
 
+#if defined(__i386__) || defined(__x86_64__)
+// Firmware may list the same core as both a local APIC and an x2APIC entry.
+static bool apic_id_already_listed(cpu_apic_id_t apic_id, int found_cpus)
+{
+    int count = found_cpus < MAX_CPUS ? found_cpus : MAX_CPUS;
+
+    for (int i = 0; i < count; i++) {
+        if (cpu_num_to_apic_id[i] == apic_id) {
+            return true;
+        }
+    }
+    return false;
+}
+#endif
+
 static bool find_cpus_in_madt(void)
 {
     if (acpi_config.madt_addr == 0) {
@@ -533,17 +597,29 @@ static bool find_cpus_in_madt(void)
 
     int found_cpus = 0;
 
+#if defined(__aarch64__)
+    uint64_t bsp_mpidr = read_sysreg(mpidr_el1) & MPIDR_AFFINITY_MASK;
+    cpu_num_to_apic_id[0] = bsp_mpidr;
+#endif
+
     uint8_t *tab_entry_ptr = (uint8_t *)mpc + sizeof(*mpc);
     uint8_t *mpc_table_end = (uint8_t *)mpc + mpc->h.length;
-    while (tab_entry_ptr < mpc_table_end) {
+    while (tab_entry_ptr + sizeof(madt_entry_header_t) <= mpc_table_end) {
         madt_entry_header_t *entry_header = (madt_entry_header_t *)tab_entry_ptr;
+        // Reject malformed entries that could make us read past the end of
+        // the table or loop forever.
+        if (entry_header->length < sizeof(madt_entry_header_t)
+         || tab_entry_ptr + entry_header->length > mpc_table_end) {
+            return false;
+        }
 #if defined(__i386__) || defined(__x86_64__)
         if (entry_header->type == MADT_PROCESSOR) {
             if (entry_header->length != sizeof(madt_processor_entry_t)) {
                 return false;
             }
             madt_processor_entry_t *entry = (madt_processor_entry_t *)tab_entry_ptr;
-            if (entry->flags & (MADT_PF_ENABLED|MADT_PF_ONLINE_CAPABLE)) {
+            if ((entry->flags & (MADT_PF_ENABLED|MADT_PF_ONLINE_CAPABLE))
+             && !apic_id_already_listed(entry->apic_id, found_cpus)) {
                 if (num_available_cpus < MAX_CPUS) {
                     cpu_num_to_apic_id[found_cpus] = entry->apic_id;
                     // The first CPU is the BSP, don't increment.
@@ -559,7 +635,8 @@ static bool find_cpus_in_madt(void)
                 return false;
             }
             madt_processor_x2apic_entry_t *entry = (madt_processor_x2apic_entry_t *)tab_entry_ptr;
-            if (entry->flags & MADT_PF_ENABLED) {
+            if ((entry->flags & MADT_PF_ENABLED)
+             && !apic_id_already_listed(entry->apic_id, found_cpus)) {
                 if (num_available_cpus < MAX_CPUS) {
                     cpu_num_to_apic_id[found_cpus] = entry->apic_id;
                     // The first CPU is the BSP, don't increment.
@@ -591,10 +668,32 @@ static bool find_cpus_in_madt(void)
                 found_cpus++;
             }
         }
+#elif defined(__aarch64__)
+        if (entry_header->type == MADT_GICC) {
+            // GICC entries are 76 bytes or longer, depending on the ACPI
+            // revision. All variants have the MPIDR at the same offset.
+            if (entry_header->length < 76) {
+                return false;
+            }
+            madt_gicc_entry_t *entry = (madt_gicc_entry_t *)tab_entry_ptr;
+            if (entry->flags & (MADT_GICC_ENABLED|MADT_GICC_ONLINE_CAPABLE)) {
+                uint64_t mpidr = entry->mpidr & MPIDR_AFFINITY_MASK;
+                if (mpidr != bsp_mpidr && num_available_cpus < MAX_CPUS) {
+                    cpu_num_to_apic_id[num_available_cpus] = mpidr;
+                    num_available_cpus++;
+                }
+                found_cpus++;
+            }
+        }
 #endif
         tab_entry_ptr += entry_header->length;
     }
 
+#if defined(__aarch64__)
+    // There is no memory-mapped local interrupt controller to map.
+    (void)apic_addr;
+    (void)found_cpus;
+#else
     if (!apic_x2apic) {
         apic = (volatile apic_register_t *)map_region(apic_addr, APIC_REGS_SIZE, false);
         if (apic == NULL) {
@@ -602,8 +701,31 @@ static bool find_cpus_in_madt(void)
             return false;
         }
     }
+#endif
     return true;
 }
+
+#if defined(__i386__) || defined(__x86_64__)
+// The BSP is not always the first CPU listed in the MADT. Make sure it is in
+// slot 0, otherwise smp_start() would send INIT-SIPI to the BSP itself,
+// hanging the system, and the AP listed in slot 0 would never be started.
+static void verify_bsp_is_cpu0(void)
+{
+    cpu_apic_id_t bsp_apic_id = (cpu_apic_id_t)my_apic_id();
+
+    if (cpu_num_to_apic_id[0] == bsp_apic_id) {
+        return;
+    }
+    for (int i = 1; i < num_available_cpus; i++) {
+        if (cpu_num_to_apic_id[i] == bsp_apic_id) {
+            cpu_num_to_apic_id[i] = cpu_num_to_apic_id[0];
+            break;
+        }
+    }
+    // If the BSP wasn't listed at all, this drops the CPU that was in slot 0.
+    cpu_num_to_apic_id[0] = bsp_apic_id;
+}
+#endif
 
 static bool find_numa_nodes_in_srat(void)
 {
@@ -783,11 +905,14 @@ static bool parse_slit(uintptr_t slit_addr)
 }
 #endif
 
+#if !defined(__aarch64__)
 static inline void send_ipi(int apic_id, int trigger __attribute__((unused)), int level __attribute__((unused)), int mode, uint8_t vector)
 {
 #if defined(__i386__) || defined(__x86_64__)
     if (apic_x2apic) {
         uint64_t icr = ((uint64_t)apic_id << 32) | (uint32_t)(trigger << 15 | level << 14 | mode << 8 | vector);
+        // The x2APIC ICR WRMSR is not serializing; fence so older stores are visible first (SDM vol 3A 11.12.3).
+        __asm__ __volatile__ ("mfence; lfence" : : : "memory");
         wrmsr(MSR_IA32_X2APIC_BASE + APIC_REG_ICRLO, (uint32_t)icr, (uint32_t)(icr >> 32));
         return;
     }
@@ -836,6 +961,7 @@ static bool send_ipi_and_wait(int apic_id, int trigger, int level, int mode, uin
     return true;
 #endif
 }
+#endif // !defined(__aarch64__)
 
 #if defined(__i386__) || defined(__x86_64__)
 static uint32_t read_apic_esr(bool is_p5)
@@ -913,6 +1039,14 @@ static bool start_cpu(int cpu_num)
     usleep(use_long_delays ? 200 : 10);
 
     return true;
+}
+#elif defined(__aarch64__)
+static bool start_cpu(int cpu_num)
+{
+    // The AP enters startup64 with the MMU off and its CPU number in x0.
+    int64_t status = psci_cpu_on(cpu_num_to_apic_id[cpu_num], (uintptr_t)ap_startup_addr, cpu_num);
+
+    return (status == PSCI_RET_SUCCESS);
 }
 #endif
 
@@ -1053,6 +1187,9 @@ void smp_init(bool smp_enable)
     if (smp_enable) {
 #if defined(__i386__) || defined(__x86_64__)
         (void)(find_cpus_in_madt() || find_cpus_in_floating_mp_struct());
+        if (apic != NULL || apic_x2apic) {
+            verify_bsp_is_cpu0();
+        }
 #else
         find_cpus_in_madt();
 #endif
@@ -1076,14 +1213,8 @@ void smp_init(bool smp_enable)
     smp_heap_page = heap_alloc(HEAP_TYPE_LM_1, PAGE_SIZE, PAGE_SIZE) >> PAGE_SHIFT;
 
 #if defined(__i386__) || defined(__x86_64__)
-    ap_startup_addr = (uintptr_t)startup;
-
-    size_t ap_trampoline_size = ap_trampoline_end - ap_trampoline;
-    memcpy((uint8_t *)HEAP_BASE_ADDR, ap_trampoline, ap_trampoline_size);
-
-    alloc_addr = HEAP_BASE_ADDR + ap_trampoline_size;
-#elif defined(__loongarch_lp64)
-    ap_startup_addr = (uintptr_t)startup64;
+    alloc_addr = HEAP_BASE_ADDR + (ap_trampoline_end - ap_trampoline);
+#elif defined(__loongarch_lp64) || defined(__aarch64__)
     alloc_addr = HEAP_BASE_ADDR;
 #endif
 }
@@ -1091,6 +1222,22 @@ void smp_init(bool smp_enable)
 int smp_start(cpu_state_t cpu_state[MAX_CPUS])
 {
     int cpu_num;
+
+    // Set up the AP startup vector here rather than in smp_init(): the program
+    // may have been relocated in between, and the APs must enter the running copy.
+#if defined(__i386__) || defined(__x86_64__)
+    ap_startup_addr = (uintptr_t)startup;
+
+    memcpy((uint8_t *)HEAP_BASE_ADDR, ap_trampoline, ap_trampoline_end - ap_trampoline);
+#elif defined(__loongarch_lp64)
+    ap_startup_addr = (uintptr_t)startup64;
+#elif defined(__aarch64__)
+    ap_startup_addr = (uintptr_t)startup64;
+
+    // The APs boot with MMU and caches off, so make the (possibly relocated)
+    // program image visible at the point of coherency before waking them.
+    cache_clean_range(_start, _end);
+#endif
 
     cpu_state[0] = CPU_STATE_RUNNING;  // we don't support disabling the boot CPU
 
@@ -1131,18 +1278,29 @@ int smp_start(cpu_state_t cpu_state[MAX_CPUS])
 #endif
 }
 
-void smp_send_nmi(int cpu_num)
+void smp_send_nmi(int cpu_num __attribute__((unused)))
 {
+#if defined(__aarch64__)
+    // Wake up all CPUs waiting in WFE. The waiters recheck their wakeup flag,
+    // so waking more CPUs than necessary is harmless. The DSB ensures the flag
+    // update is visible before the event, or the wakeup could be missed.
+    __asm__ __volatile__ ("dsb ish; sev" ::: "memory");
+#else
 #if defined(__i386__) || defined(__x86_64__)
     while (apic_read(APIC_REG_ICRLO) & APIC_ICR_BUSY) {
         __builtin_ia32_pause();
     }
 #endif
     send_ipi(cpu_num_to_apic_id[cpu_num], 0, 0, APIC_DELMODE_NMI, 0);
+#endif
 }
 
 int smp_my_cpu_num(void)
 {
+#if defined(__aarch64__)
+    // Our CPU number was stored in TPIDR_EL1 by the startup code.
+    return (int)read_sysreg(tpidr_el1);
+#else
     if (num_available_cpus <= 1) return 0;
 
     int apic_id = my_apic_id();
@@ -1152,6 +1310,7 @@ int smp_my_cpu_num(void)
         }
     }
     return 0;
+#endif
 }
 
 uint32_t smp_get_proximity_domain_idx(int cpu_num)

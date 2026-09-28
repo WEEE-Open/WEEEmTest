@@ -18,6 +18,7 @@ weeemtest
 memtest_shared
 memtest_shared.bin
 *.bin
+*.elf
 *.efi
 *.img
 *.iso

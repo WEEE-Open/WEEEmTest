@@ -7,7 +7,7 @@
  *
  * Provides access to SPD parsing and printing functions.
  *
- * Copyright (C) 2004-2025 Sam Demeulemeester.
+ * Copyright (C) 2004-2026 Sam Demeulemeester.
  */
 
 #define MAX_SPD_SLOT    8
@@ -32,12 +32,13 @@ typedef struct spd_infos {
     uint8_t     slot_num;
     uint16_t    jedec_code;
     uint32_t    module_size;
-    char        *type;
+    char        type[6];    // inline, not a pointer: the BSS cache has no reloc records to rebase it
     char        sku[SPD_SKU_LEN + 1];
     uint8_t     XMP;
     uint16_t    freq;
     bool        hasECC;
     bool        hasTempSensor;
+    bool        hasBadCRC;
     uint8_t     fab_year;
     uint8_t     fab_week;
     uint16_t    tCL;
@@ -55,7 +56,7 @@ typedef struct ram_infos {
     uint16_t    tRCD;
     uint16_t    tRP;
     uint16_t    tRAS;
-    char        *type;
+    char        type[6];
 } ram_info_t;
 
 typedef struct {
@@ -67,8 +68,17 @@ typedef struct {
 
 extern ram_info_t ram;
 extern ram_slot_info_t ram_slot_info[MAX_SPD_SLOT];
+extern spd_info spd_slot_cache[MAX_SPD_SLOT];
 
 void print_spdi(spd_info spdi, uint8_t lidx);
 void parse_spd(spd_info *spdi, uint8_t slot_idx);
+
+/**
+ * Return the JEP-106 manufacturer name for a jedec code composed as
+ * (bank << 8 | id), where bank is the number of 0x7F continuation codes
+ * and id is the manufacturer byte with the parity bit stripped.
+ * Return NULL if the code is not in the table.
+ */
+const char *get_jep106_name(uint16_t jedec_code);
 
 #endif // SPD_H

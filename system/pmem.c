@@ -20,6 +20,8 @@
 
 #include "pmem.h"
 
+#include "vmem.h"
+
 //------------------------------------------------------------------------------
 // Constants
 //------------------------------------------------------------------------------
@@ -38,6 +40,11 @@ pm_map_t    pm_map[MAX_MEM_SEGMENTS];
 int         pm_map_size = 0;
 
 size_t      num_pm_pages = 0;
+
+#if defined(__aarch64__)
+uintptr_t   low_load_limit  = 0;
+uintptr_t   high_load_limit = 0;
+#endif
 
 //------------------------------------------------------------------------------
 // Private Functions
@@ -248,8 +255,18 @@ void pmem_init(void)
 
     const boot_params_t *boot_params = (boot_params_t *)boot_params_addr;
 
-    int sanitized_entries = sanitize_e820_map(sanitized_map, boot_params->e820_map, boot_params->e820_entries);
+    int e820_entries = boot_params->e820_entries;
+    if (e820_entries > E820_MAP_SIZE) {
+        e820_entries = E820_MAP_SIZE;
+    }
+
+    int sanitized_entries = sanitize_e820_map(sanitized_map, boot_params->e820_map, e820_entries);
 
     init_pm_map(sanitized_map, sanitized_entries);
     sort_pm_map();
+
+#if defined(__aarch64__)
+    low_load_limit  = (pm_map[0].start << PAGE_SHIFT) + SIZE_C(4,MB);
+    high_load_limit = (pm_map[0].start << PAGE_SHIFT) + (VM_PINNED_SIZE << PAGE_SHIFT);
+#endif
 }

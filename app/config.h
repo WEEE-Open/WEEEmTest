@@ -60,7 +60,10 @@ extern bool         enable_temp_cpu;
 extern bool         enable_temp_ram;
 
 extern bool         enable_sm;
+extern bool         enable_spd_crc;
 extern bool         enable_tty;
+extern bool         enable_tty_log;
+extern int          log_max_passes;
 extern bool         enable_bench;
 extern bool         enable_mch_read;
 extern bool         enable_ecc_polling;
@@ -78,6 +81,7 @@ extern bool         tty_new_line;
 
 extern uint32_t     tty_mmio_ref_clk;
 extern int          tty_mmio_stride;
+extern bool         tty_pl011;
 
 extern bool err_banner_redraw;
 

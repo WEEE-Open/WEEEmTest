@@ -36,12 +36,13 @@ static bool piix4_get_smb(uint8_t address);
 static bool ich5_get_smb(void);
 static bool ali_get_smb(uint8_t address);
 static uint8_t ich5_process(void);
+static void ich5_wait_spd5_hub_ready(uint8_t smbus_adr);
 static uint8_t ich5_read_spd_byte(uint8_t adr, uint16_t cmd);
 static uint8_t nf_read_spd_byte(uint8_t smbus_adr, uint8_t spd_adr);
 static uint8_t ali_m1563_read_spd_byte(uint8_t smbus_adr, uint8_t spd_adr);
 static uint8_t ali_m1543_read_spd_byte(uint8_t smbus_adr, uint8_t spd_adr);
 
-void print_spd_startup_info(void)
+int print_spd_startup_info(void)
 {
     uint8_t spdidx = 0, spd_line_idx = 0;
 
@@ -52,7 +53,7 @@ void print_spd_startup_info(void)
     }
 
     if (!setup_smb_controller() || smbusbase == 0) {
-        return;
+        return 0;
     }
 
     for (spdidx = 0; spdidx < MAX_SPD_SLOT; spdidx++) {
@@ -61,6 +62,8 @@ void print_spd_startup_info(void)
         ram_slot_info[spdidx].slot_idx = spdidx;
         ram_slot_info[spdidx].isPopulated = curspd.isValid;
         ram_slot_info[spdidx].hasTempSensor = false;
+
+        spd_slot_cache[spdidx] = curspd;
 
         if (!curspd.isValid)
             continue;
@@ -76,6 +79,8 @@ void print_spd_startup_info(void)
         print_spdi(curspd, ROW_SPD+spd_line_idx);
         spd_line_idx++;
     }
+
+    return spd_line_idx;
 }
 
 // --------------------------
@@ -185,6 +190,7 @@ static const uint16_t intel_ich5_dids[] =
     //0xA822,  // Lunar Lake
     0xE322,  // Panther Lake-H (SOC)
     //0xE422,  // Panther Lake-P (SOC)
+    0x4D22   // Wildcat Lake (SOC)
 };
 
 static bool find_in_did_array(uint16_t did, const uint16_t * ids, unsigned int size)
@@ -402,7 +408,7 @@ static bool ich5_get_smb(void)
     // Enable I2C Host Controller Interface if disabled
     // Use SMBUS Mode for DDR5 to allow bank switch using Proc Call
     uint8_t temp = pci_config_read8(smbbus, smbdev, smbfun, 0x40);
-    if ((temp & 4) == 0 && dmi_memory_device->type != DMI_DDR5) {
+    if ((temp & 4) == 0 && dmi_memory_device_type != DMI_DDR5) {
        pci_config_write8(smbbus, smbdev, smbfun, 0x40, temp | 0x04);
     }
 
@@ -549,7 +555,7 @@ uint8_t get_spd(uint8_t slot_idx, uint16_t spd_adr)
 
 uint8_t get_spd_hub_register(uint8_t slot_idx, uint8_t spd_hub_adr)
 {
-    if(dmi_memory_device->type == DMI_DDR5) {
+    if(dmi_memory_device_type == DMI_DDR5) {
         return ich5_read_spd_byte(slot_idx, spd_hub_adr | 0xFF00);
     }
 
@@ -568,7 +574,7 @@ static uint8_t ich5_read_spd_byte(uint8_t smbus_adr, uint16_t spd_adr)
 {
     smbus_adr += 0x50;
 
-    if (dmi_memory_device->type == DMI_DDR4) {
+    if (dmi_memory_device_type == DMI_DDR4) {
         // Switch page if needed (DDR4)
         if (spd_adr > 0xFF && spd_page != 1) {
             __outb((0x37 << 1) | I2C_WRITE, SMBHSTADD);
@@ -588,7 +594,7 @@ static uint8_t ich5_read_spd_byte(uint8_t smbus_adr, uint16_t spd_adr)
         if (spd_adr > 0xFF) {
             spd_adr -= 0x100;
         }
-    } else if (dmi_memory_device->type == DMI_DDR5) {
+    } else if (dmi_memory_device_type == DMI_DDR5) {
             // For DDR5, choose between reading from the SPD EEPROM (which may require a bank switch)
             // and reading from the DDR5 SPD Hub Register (where we added a 0xFF00 offset).
 
@@ -598,6 +604,7 @@ static uint8_t ich5_read_spd_byte(uint8_t smbus_adr, uint16_t spd_adr)
             uint8_t adr_page = spd_adr / 128;
 
             if (adr_page != spd_page || last_adr != smbus_adr) {
+                uint8_t rc;
 
                 // DDR5 SPD Bank switch can be achieved using 2 methods
                 if(((smbus_id >> 16) & 0xFFFF) == PCI_VID_INTEL) {
@@ -609,7 +616,7 @@ static uint8_t ich5_read_spd_byte(uint8_t smbus_adr, uint16_t spd_adr)
                     __outb(0, SMBHSTDAT1);
                     __outb(SMBHSTCNT_PROC_CALL, SMBHSTCNT);
 
-                     ich5_process();
+                    rc = ich5_process();
 
                     // These dummy read are mandatory to terminate a Proc Call
                     __inb(SMBHSTDAT0);
@@ -623,7 +630,12 @@ static uint8_t ich5_read_spd_byte(uint8_t smbus_adr, uint16_t spd_adr)
                     __outb(adr_page & 7, SMBHSTDAT0);
                     __outb(SMBHSTCNT_BYTE_DATA, SMBHSTCNT);
 
-                    ich5_process();
+                    rc = ich5_process();
+                }
+
+                // Wait until SPD Hub is ready
+                if (rc == 0) {
+                    ich5_wait_spd5_hub_ready(smbus_adr);
                 }
 
                 spd_page = adr_page;
@@ -648,6 +660,21 @@ static uint8_t ich5_read_spd_byte(uint8_t smbus_adr, uint16_t spd_adr)
         return __inb(SMBHSTDAT0);
     } else {
         return 0xFF;
+    }
+}
+
+// Poll SPD5 hub MR48[3] "write in progress" for up to ~25 ms.
+static void ich5_wait_spd5_hub_ready(uint8_t smbus_adr)
+{
+    for (int i = 0; i < 25; i++) {
+        __outb((smbus_adr << 1) | I2C_READ, SMBHSTADD);
+        __outb(SPD5_HUB_STATUS, SMBHSTCMD);
+        __outb(SMBHSTCNT_BYTE_DATA, SMBHSTCNT);
+
+        if (ich5_process() == 0 && !(__inb(SMBHSTDAT0) & 0x08)) {
+            return;
+        }
+        usleep(500);
     }
 }
 

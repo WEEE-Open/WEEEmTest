@@ -6,6 +6,7 @@
 #include <stdint.h>
 
 #include "cpuid.h"
+#include "cpulocal.h"
 #include "cpuinfo.h"
 #include "hwctrl.h"
 #include "i2c_x86.h"
@@ -15,6 +16,7 @@
 #include "serial.h"
 #include "pmem.h"
 #include "smbios.h"
+#include "smp.h"
 #include "spd.h"
 #include "temperature.h"
 #include "tsc.h"
@@ -68,7 +70,6 @@ static int test_ticks = 0;      // current value (ticks_per_test is final value)
 static int pass_bar_length = 0; // currently displayed length
 static int test_bar_length = 0; // currently displayed length
 
-static uint64_t run_start_time = 0; // TSC time stamp
 static uint64_t next_spin_time = 0; // TSC time stamp
 
 static int prev_sec = -1;               // previous second
@@ -82,6 +83,8 @@ static uint16_t popup_status_save_buffer[POP_STAT_W * POP_STAT_H];
 //------------------------------------------------------------------------------
 
 int scroll_message_row;
+
+uint64_t run_start_time = 0; // TSC time stamp
 
 int max_cpu_temp = TEMP_INVALID;
 
@@ -253,6 +256,8 @@ void display_init(void)
     prints(ROW_FOOTER, 74, ".x32");
 #elif defined (__loongarch_lp64)
     prints(ROW_FOOTER, 74, ".la64");
+#elif defined (__aarch64__)
+    prints(ROW_FOOTER, 74, ".arm64");
 #endif
 
     set_foreground_colour(palette.foreground);
@@ -261,9 +266,16 @@ void display_init(void)
     if (cpu_model) {
         display_cpu_model(cpu_model);
     }
+#if defined(__aarch64__)
+    // Generic timer does not run at CPU clock. Use the PMU instead
+    if (cpu_clk_mhz) {
+        display_cpu_clk((int)cpu_clk_mhz);
+    }
+#else
     if (clks_per_msec) {
         display_cpu_clk((int)(clks_per_msec / 1000));
     }
+#endif
 #if TESTWORD_WIDTH < 64
     if (cpuid_info.flags.lm) {
         display_cpu_addr_mode(" [LM]");
@@ -372,7 +384,11 @@ void display_cpu_topology(void)
 void post_display_init(void)
 {
     print_smbios_startup_info();
-    print_spd_startup_info();
+
+    if (print_spd_startup_info() == 0) {
+        // No SPD data, fall back to SMBIOS Type 17 info.
+        print_dmi_memory_info();
+    }
 
     if (imc.freq) {
         // Try to get RAM information from IMC
@@ -493,7 +509,7 @@ void display_temperature(void)
 
     if (enable_temp_ram) {
         // Display RAM Temperature (DDR5+ Only) - LA64 unsupported yet
-        if (dmi_memory_device->type == DMI_DDR5 && !strstr(cpuid_info.vendor_id.str, "Loongson")) {
+        if (dmi_memory_device_type == DMI_DDR5 && !strstr(cpuid_info.vendor_id.str, "Loongson")) {
 
             for (int i = 0; i < MAX_SPD_SLOT; i++) {
 
@@ -618,16 +634,20 @@ void scroll(void)
     if (scroll_message_row < ROW_SCROLL_B) {
         scroll_message_row++;
     } else {
-        if (scroll_lock) {
-            display_footer_message("<Enter> Single step     ");
-        }
-        scroll_wait = true;
-        do {
-            check_input();
-        } while (scroll_wait && scroll_lock);
+        // Only the master CPU may poll the keyboard, so the scroll-lock
+        // single-step wait is only available to it.
+        if (smp_my_cpu_num() == master_cpu) {
+            if (scroll_lock) {
+                display_footer_message("<Enter> Single step     ");
+            }
+            scroll_wait = true;
+            do {
+                check_input();
+            } while (scroll_wait && scroll_lock);
 
-        scroll_wait = false;
-        clear_footer_message();
+            scroll_wait = false;
+            clear_footer_message();
+        }
         scroll_screen_region(ROW_SCROLL_T, 0, ROW_SCROLL_B, SCREEN_WIDTH - 1);
     }
 }
@@ -711,6 +731,7 @@ void do_tick(int my_cpu)
     // This only tick one time per second
     if (!timed_update_done) {
 
+<<<<<<< HEAD
         // in case of error, the background becomes red
         static bool error_layout_drawn = false;
 
@@ -720,6 +741,16 @@ void do_tick(int my_cpu)
                     display_start_test();
                     error_layout_drawn = true;
                 }
+=======
+        // A corrupted stack canary means a CPU overran its stack slot and may
+        // have corrupted the thread-local barrier flags below it (see boot.h).
+        static int last_overflow_cpu = -1;
+        int overflow_cpu = stack_canary_check();
+        if (overflow_cpu >= 0 && overflow_cpu != last_overflow_cpu) {
+            last_overflow_cpu = overflow_cpu;
+            do_trace(overflow_cpu, "CPU stack overflow detected - test results are unreliable");
+        }
+>>>>>>> upstream/main
 
         // Display FAIL banner if (new) errors detected
         if (err_banner_redraw && !big_status_displayed && error_count > 1) {

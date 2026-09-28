@@ -34,6 +34,14 @@ static inline void cpu_pause (void)
       "nop \n\t" \
     );
 }
+#elif defined(__aarch64__)
+/**
+ * ARM64 CPU pause.
+ */
+static inline void cpu_pause (void)
+{
+    __asm__ __volatile__ ("yield");
+}
 #endif
 
 /**
@@ -45,7 +53,7 @@ static inline void spin_wait(spinlock_t *lock)
         while (*lock) {
 #if defined(__x86_64) || defined(__i386__)
             __builtin_ia32_pause();
-#elif defined (__loongarch_lp64)
+#elif defined (__loongarch_lp64) || defined(__aarch64__)
             cpu_pause();
 #endif
         }
@@ -62,12 +70,24 @@ static inline void spin_lock(spinlock_t *lock)
             do {
 #if defined(__x86_64) || defined(__i386__)
                 __builtin_ia32_pause();
-#elif defined (__loongarch_lp64)
+#elif defined (__loongarch_lp64) || defined(__aarch64__)
                 cpu_pause();
 #endif
             } while (*lock);
         }
     }
+}
+
+/**
+ * Locks the mutex if it is not currently locked, without waiting. Returns
+ * true if the mutex was locked by this call, false if it was already held.
+ */
+static inline bool spin_trylock(spinlock_t *lock)
+{
+    if (lock) {
+        return __sync_bool_compare_and_swap(lock, false, true);
+    }
+    return true;
 }
 
 /**

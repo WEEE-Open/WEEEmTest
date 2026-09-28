@@ -29,6 +29,7 @@ INC_DIRS = -I../../boot -I../../system -I ../../system/imc -I../../system/loonga
 SYS_OBJS = system/acpi.o \
            system/cpulocal.o \
            system/ehci.o \
+           system/fat32.o \
            system/font.o \
            system/heap.o \
            system/hwquirks.o \
@@ -37,6 +38,7 @@ SYS_OBJS = system/acpi.o \
            system/pci_mmio.o \
            system/pmem.o \
            system/reloc.o \
+           system/rtc.o \
            system/screen.o \
            system/serial.o \
            system/smbios.o \
@@ -45,12 +47,14 @@ SYS_OBJS = system/acpi.o \
            system/timers.o \
            system/uhci.o \
            system/usbhcd.o \
+           system/usbmsd.o \
            system/xhci.o \
            system/loongarch/i2c.o \
            system/loongarch/cpuid.o \
            system/loongarch/cpuinfo.o \
            system/loongarch/hwctrl.o \
            system/loongarch/memctrl.o \
+           system/loongarch/simd.o \
            system/loongarch/temperature.o \
            system/loongarch/vmem.o
 
@@ -66,11 +70,15 @@ LIB_OBJS = lib/barrier.o \
 TST_OBJS = tests/addr_walk1.o \
            tests/bit_fade.o \
            tests/block_move.o \
+           tests/bus_stress.o \
            tests/modulo_n.o \
            tests/mov_inv_fixed.o \
-           tests/mov_inv_random.o \
+           tests/mov_inv_rng.o \
+           tests/vec_prsg.o \
+           tests/loongarch/vec_prsg_lasx.o \
            tests/mov_inv_walk1.o \
            tests/own_addr.o \
+           tests/rowhammer.o \
            tests/test_helper.o \
            tests/tests.o
 
@@ -79,6 +87,7 @@ APP_OBJS = app/badram.o \
            app/display.o \
            app/error.o \
            app/main.o \
+           app/reports.o \
            app/loongarch/interrupt.o
 
 OBJS = boot/startup.o boot/efisetup.o $(SYS_OBJS) $(IMC_OBJS) $(LIB_OBJS) $(TST_OBJS) $(APP_OBJS)
@@ -100,7 +109,7 @@ debug: check memtest.debug memtestloongarch.efi
 -include $(subst .o,.d,$(TST_OBJS))
 -include $(subst .o,.d,$(APP_OBJS))
 
-boot/header.o : | ../../boot/sbat.csv
+boot/header.o : ../../boot/sbat_csv.h
 
 boot/startup.o: ../../boot/loongarch/startup64.S ../../boot/boot.h
 	@mkdir -p boot
@@ -122,6 +131,8 @@ system/reloc.o: ../../system/reloc64.c
 	@mkdir -p system
 	$(CC) -c $(CFLAGS) -fno-strict-aliasing $(OPT_SMALL)  $(INC_DIRS)  -o $@ $< -MMD -MP -MT $@ -MF $(@:.o=.d)
 
+system/rtc.o: app/build_version.h
+
 system/%.o: ../../system/%.c
 	@mkdir -p system
 	$(CC) -c $(CFLAGS) $(OPT_SMALL)  $(INC_DIRS)  -o $@ $< -MMD -MP -MT $@ -MF $(@:.o=.d)
@@ -142,6 +153,10 @@ tests/%.o: ../../tests/%.c
 	@mkdir -p tests
 	$(CC) -c $(CFLAGS) $(OPT_FAST) $(INC_DIRS)  -o $@ $< -MMD -MP -MT $@ -MF $(@:.o=.d)
 
+tests/loongarch/%.o: ../../tests/loongarch/%.c
+	@mkdir -p tests/loongarch
+	$(CC) -c $(CFLAGS) $(OPT_FAST) $(INC_DIRS)  -o $@ $< -MMD -MP -MT $@ -MF $(@:.o=.d)
+
 app/%.o: ../../app/%.c app/build_version.h
 	@mkdir -p app
 	$(CC) -c $(CFLAGS) $(OPT_SMALL)  $(INC_DIRS)  -o $@ $< -MMD -MP -MT $@ -MF $(@:.o=.d)
@@ -157,6 +172,8 @@ app/build_version.h: FORCE
 	  if $(GIT_AVAILABLE) && test -d ../../.git ; then \
 	    hash=`git rev-parse HEAD | cut -c1-7`; \
 	    sed -i 's/GIT_HASH\s\".*"/GIT_HASH "'$$hash'"/' $@.tmp; \
+	    bdate=`TZ=UTC git log -1 --format=%cd --date=format-local:'%Y-%m-%d %H:%M:%S'`; \
+	    sed -i 's/BUILD_DATETIME\s".*"/BUILD_DATETIME "'"$$bdate"'"/' $@.tmp; \
 	  else \
 	    sed -i 's/GIT_HASH\s\".*"/GIT_HASH "unknown"/' $@.tmp; \
 	  fi; \

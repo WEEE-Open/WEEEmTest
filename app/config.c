@@ -34,6 +34,7 @@
 #include "unistd.h"
 
 #include "display.h"
+#include "reports.h"
 #include "test.h"
 
 #include "tests.h"
@@ -98,6 +99,7 @@ bool            enable_temp_cpu    = true;
 bool            enable_temp_ram    = true;              // DDR5+ temperature polling
 
 bool            enable_sm          = true;
+bool            enable_spd_crc     = true;
 bool            enable_bench       = true;
 bool            enable_mch_read    = true;
 bool            enable_numa        = false;
@@ -110,6 +112,8 @@ bool            dark_mode          = false;
 power_save_t    power_save         = POWER_SAVE_HIGH;
 
 bool            enable_tty         = false;
+bool            enable_tty_log     = false;             // Machine-parseable serial log instead of interactive console
+int             log_max_passes     = 0;                 // Reboot after N passes in log mode (0 = unlimited)
 uintptr_t       tty_address        = 0x3F8;             // Legacy IO or MMIO Address accepted
 int             tty_baud_rate      = 115200;
 int             tty_update_period  = 2;                 // Update TTY every 2 seconds (default)
@@ -117,6 +121,7 @@ bool            tty_new_line       = false;
 
 uint32_t        tty_mmio_ref_clk   = UART_REF_CLK_MMIO; // Reference clock for MMIO (in Hz)
 int             tty_mmio_stride    = 4;                 // Stride for MMIO (register width in bytes)
+bool            tty_pl011          = false;             // UART is an ARM PL011 rather than a 16550
 
 bool            err_banner_redraw  = false;             // Redraw banner on new errors
 
@@ -130,6 +135,18 @@ static void parse_serial_params(const char *params)
 
     // No parameters passed (only "console"), use default
      if (params == NULL) {
+        return;
+    }
+
+    // Check for an ARM PL011 UART ("console=ttyAMA,0x9000000")
+    if (strncmp(params, "ttyAMA,0x", 9) == 0) {
+        uintptr_t pl011_adr = hexstr2int(params+9);
+        if (pl011_adr > 0xFFFF) {
+            tty_pl011   = true;
+            tty_address = pl011_adr;
+        } else {
+            enable_tty = false;
+        }
         return;
     }
 
@@ -279,8 +296,16 @@ static void parse_option(const char *option, const char *params)
 {
     if (option[0] == '\0') return;
 
+    // Options may be given without parameters.
+    if (params == NULL) params = "";
+
     if (strncmp(option, "console", 8) == 0) {
         parse_serial_params(params);
+    } else if (strncmp(option, "log", 4) == 0) {
+        parse_serial_params(params);
+        enable_tty_log = enable_tty;
+    } else if (strncmp(option, "maxpasses", 10) == 0) {
+        log_max_passes = parse_decimal(params, &params);
     } else if (strncmp(option, "newline", 7) == 0) {
         tty_new_line = true;
     } else if (strncmp(option, "cpuseqmode", 11) == 0) {
@@ -331,6 +356,8 @@ static void parse_option(const char *option, const char *params)
         enable_sm = false;
     } else if (strncmp(option, "nosmp", 6) == 0) {
         smp_enabled = false;
+    } else if (strncmp(option, "nospdcrc", 9) == 0) {
+        enable_spd_crc = false;
     } else if (strncmp(option, "numa", 5) == 0) {
         enable_numa = true;
     } else if (strncmp(option, "nonuma", 7) == 0) {
@@ -994,6 +1021,11 @@ void config_init(void)
             parse_command_line((char *)cmd_line_addr, cmd_line_size);
         }
     }
+
+    // Serial log mode replaces the interactive serial console.
+    if (enable_tty_log) {
+        enable_tty = false;
+    }
 }
 
 void config_menu(bool initial)
@@ -1022,7 +1054,18 @@ void config_menu(bool initial)
             prints(POP_R+11, POP_LI, "<F10> Exit menu");
         } else {
             prints(POP_R+7,  POP_LI, "<F5>  Skip current test");
-            prints(POP_R+8 , POP_LI, "<F10> Exit menu");
+            if (usb_mass_storage_found || usb_hcd_available()) {
+                if (usb_mass_storage_found && usb_msd_name[0]) {
+                    // Truncate the drive name so the line stays inside the popup.
+                    usb_msd_name[19] = '\0';
+                    printf(POP_R+8,  POP_LI, "<F6>  Save to %s           ", usb_msd_name);
+                } else {
+                    prints(POP_R+8,  POP_LI, "<F6>  Save results to USB");
+                }
+                prints(POP_R+9,  POP_LI, "<F10> Exit menu");
+            } else {
+                prints(POP_R+8,  POP_LI, "<F10> Exit menu");
+            }
         }
 
         if (tty_update) {
@@ -1057,6 +1100,8 @@ void config_menu(bool initial)
           case '6':
             if (initial) {
                 enable_temp_cpu = !enable_temp_cpu;
+            } else if (usb_mass_storage_found || usb_hcd_available()) {
+                save_results_to_usb();
             }
             break;
           case '7':
