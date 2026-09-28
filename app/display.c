@@ -731,7 +731,6 @@ void do_tick(int my_cpu)
     // This only tick one time per second
     if (!timed_update_done) {
 
-<<<<<<< HEAD
         // in case of error, the background becomes red
         static bool error_layout_drawn = false;
 
@@ -741,7 +740,6 @@ void do_tick(int my_cpu)
                     display_start_test();
                     error_layout_drawn = true;
                 }
-=======
         // A corrupted stack canary means a CPU overran its stack slot and may
         // have corrupted the thread-local barrier flags below it (see boot.h).
         static int last_overflow_cpu = -1;
@@ -750,7 +748,6 @@ void do_tick(int my_cpu)
             last_overflow_cpu = overflow_cpu;
             do_trace(overflow_cpu, "CPU stack overflow detected - test results are unreliable");
         }
->>>>>>> upstream/main
 
         // Display FAIL banner if (new) errors detected
         if (err_banner_redraw && !big_status_displayed && error_count > 1) {
