@@ -19,10 +19,19 @@ void print_spdi_tarallo(spd_info spdi, uint8_t row);
 #define POP_STAT_W       44
 #define POP_STAT_H       11
 
+#define POP_BANNER_W 74
+
 #define POP_STAT_LAST_R  (POP_STAT_R + POP_STAT_H - 1)
 #define POP_STAT_LAST_C  (POP_STAT_C + POP_STAT_W - 1)
 
+#define POP_BANNER_R 12
+#define POP_BANNER_C 3
+
+#define POP_BANNER_LAST_R (POP_BANNER_R + POP_STAT_H - 1)
+#define POP_BANNER_LAST_C (POP_BANNER_C + POP_BANNER_W - 1)
+
 #define POP_STATUS_REGION  POP_STAT_R, POP_STAT_C, POP_STAT_LAST_R, POP_STAT_LAST_C
+#define POP_BANNER_REGION POP_BANNER_R, POP_BANNER_C, POP_BANNER_LAST_R, POP_BANNER_LAST_C
 
 static uint16_t popup_status_save_buffer[POP_STAT_W * POP_STAT_H];
 
@@ -50,13 +59,17 @@ void info_display() {
 
     if (!big_status_displayed) {
 
-        save_screen_region(POP_STATUS_REGION, popup_status_save_buffer);
+        save_screen_region(POP_BANNER_REGION, popup_status_save_buffer);
 
         set_background_colour(GREEN);
 
-        clear_screen_region(POP_STATUS_REGION);
+        clear_screen_region(POP_BANNER_REGION);
 
         int line = POP_STAT_R + 1;
+
+
+        printf(line, POP_BANNER_C + 2, "Slot  | serial number | siz | type-freq | ff | ECC | manufacturer");
+        line++;
 
         for (int i = 0; i < 16; i++) {
             spd_info curspd;
@@ -66,7 +79,7 @@ void info_display() {
             if (curspd.module_size > 0) {
                 print_spdi_tarallo(curspd, line);
                 line++;
-                if (line >= POP_STAT_R + 8) {
+                if (line >= POP_BANNER_R + 8) {
                     break;
                 }
             }
@@ -89,8 +102,8 @@ void print_spdi_tarallo(spd_info spdi, uint8_t row)
     uint8_t curcol;
     uint16_t i;
 
-    char* serial_id = "ASD_no_serial_ID";
-    char* form_factor_str = "ASD_unknown";
+    char* serial_id = "no_serial_ASD";
+    char* form_factor_str = "ASDnknown";
 
     if (dmi_memory_device != NULL) {
             char* temp_serial = get_serial(&dmi_memory_device->header, dmi_memory_device->serialnum);
@@ -100,26 +113,27 @@ void print_spdi_tarallo(spd_info spdi, uint8_t row)
             form_factor_str = form_factor(dmi_memory_device->form);
         }
 
-    // serial_id = get_serial(&dmi_memory_device->header, dmi_memory_device->serialnum);
+    //serial_id = get_serial(&dmi_memory_device->header, dmi_memory_device->serialnum);
 
     // Print Slot Index, Module Size, type & Max frequency (Jedec or XMP)
-    curcol = printf(row, POP_STAT_C + 2, "Slot %i: %s %iMB %s-%i %s",
+    curcol = printf(row, POP_BANNER_C + 2, "Slot %i: %s | %iGB | %s-%i | %s",
                         spdi.slot_num,
                         serial_id,
-                        spdi.module_size * 1024, // Togli il * 1024, di solito Memtest lo dà già in MB!
+                        spdi.module_size / 1024,
                         spdi.type,
                         spdi.freq,
                         form_factor_str);
 
     // Print ECC status
     if (spdi.hasECC) {
-        curcol = prints(row, ++curcol, "ECC");
+        curcol = prints(row, ++curcol, "| YES");
+    } else {
+        curcol = prints(row, ++curcol, "| NO");
     }
-
     // Print Manufacturer from JEDEC106
     for (i = 0; i < JEP106_CNT; i++) {
         if (spdi.jedec_code == jep106[i].jedec_code) {
-            curcol = printf(row, ++curcol, "- %s", jep106[i].name);
+            curcol = printf(row, ++curcol, " | %s", jep106[i].name);
             break;
         }
     }
