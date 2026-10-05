@@ -36,17 +36,6 @@
 // Constants
 //------------------------------------------------------------------------------
 
-#define POP_STAT_R       12
-#define POP_STAT_C       18
-
-#define POP_STAT_W       44
-#define POP_STAT_H       11
-
-#define POP_STAT_LAST_R  (POP_STAT_R + POP_STAT_H - 1)
-#define POP_STAT_LAST_C  (POP_STAT_C + POP_STAT_W - 1)
-
-#define POP_STATUS_REGION  POP_STAT_R, POP_STAT_C, POP_STAT_LAST_R, POP_STAT_LAST_C
-
 #define SPINNER_PERIOD  100     // milliseconds
 
 #define NUM_SPIN_STATES 4
@@ -77,7 +66,6 @@ static int prev_sec = -1;               // previous second
 static bool timed_update_done = false;  // update cycle status
 
 bool big_status_displayed = false;
-static uint16_t popup_status_save_buffer[POP_STAT_W * POP_STAT_H];
 
 //------------------------------------------------------------------------------
 // Variables
@@ -171,16 +159,6 @@ void display_init(void)
             prints(11, 15, "| |/\\| |  __||  __||  __| '_ ` _ \\| |/ _ \\/ __| __|");
             prints(12, 15, "\\  /\\  / |___| |___| |__| | | | | | |  __/\\__ \\ |_ ");
             prints(13, 15, " \\/  \\/\\____/\\____/\\____/_| |_| |_\\_/\\___||___/\\__|");
-
-
-           /* // legacy bootscreen, Alp didn't like it
-            prints(8, 0,  " __      ___________________________________     ___________              __   ");
-            prints(9, 0,  "/  \\\\    /  \\\\_   _____/\\\\_   _____/\\\\_   _____/ ____\\\\__    ___/___   _______/  |_ ");
-            prints(10, 0, "\\\\   \\\\/\\\\/   /|    __)_  |    __)_  |    __)_ /      \\\\|    |_/ __ \\\\ /  ___/\\\\   __\\\\");
-            prints(11, 0, " \\\\        / |        \\\\ |        \\\\ |        \\\\  Y Y  \\\\    |\\\\  ___/ \\\\___ \\\\  |  |  ");
-            prints(12, 0, "  \\\\__/\\\\  / /_______  //_______  //_______  /__|_|  /____| \\\\___  >____  > |__|  ");
-            prints(13, 0, "       \\\\/          \\\\/          \\\\/          \\\\/      \\\\/            \\\\/     \\\\/        ");
-            */
 
             set_foreground_colour(palette.foreground);
             prints(17, 16, "Starting...");
@@ -521,11 +499,11 @@ void display_big_status(bool pass)
     bool test = true;
 
 
-    save_screen_region(POP_STATUS_REGION, popup_status_save_buffer);
+    save_screen_region(POP_BANNER_REGION, popup_banner_save_buffer);
 
 
     if (test) { //Banner for testing
-        clear_screen_region(POP_STATUS_REGION);
+        clear_screen_region(POP_BANNER_REGION);
 
         prints(POP_STAT_R+1, POP_STAT_C+5, "#######  ########   #####    #######");
         prints(POP_STAT_R+2, POP_STAT_C+5, "   #     ##        ##   ##      #   ");
@@ -548,7 +526,7 @@ void display_big_status(bool pass)
             set_foreground_colour(WHITE);
         }
 
-        clear_screen_region(POP_STATUS_REGION);
+        clear_screen_region(POP_BANNER_REGION);
 
         if (pass) {
             prints(POP_STAT_R+1, POP_STAT_C+5, "######      ##      #####    #####  ");
@@ -583,7 +561,7 @@ void restore_big_status(void)
         return;
     }
 
-    restore_screen_region(POP_STATUS_REGION, popup_status_save_buffer);
+    restore_screen_region(POP_BANNER_REGION, popup_banner_save_buffer);
     big_status_displayed = false;
 }
 

@@ -3,6 +3,7 @@
 #include <unistd.h>
 #include "display.h"
 #include "keyboard.h"
+#include "screen.h"
 #include "spd.h"
 #include "jedec_id.h"
 #include "smbios.h"
@@ -10,30 +11,9 @@
 // the definitions are copied from the `display.c` module, since they weren't global
 
 const char* form_factor(uint8_t form_code);
-char* get_serial(struct tstruct_header *header, uint8_t indice);
 void print_spdi_tarallo(spd_info spdi, uint8_t row);
 
-#define POP_STAT_R       12
-#define POP_STAT_C       18
-
-#define POP_STAT_W       44
-#define POP_STAT_H       11
-
-#define POP_BANNER_W 74
-
-#define POP_STAT_LAST_R  (POP_STAT_R + POP_STAT_H - 1)
-#define POP_STAT_LAST_C  (POP_STAT_C + POP_STAT_W - 1)
-
-#define POP_BANNER_R 12
-#define POP_BANNER_C 3
-
-#define POP_BANNER_LAST_R (POP_BANNER_R + POP_STAT_H - 1)
-#define POP_BANNER_LAST_C (POP_BANNER_C + POP_BANNER_W - 1)
-
-#define POP_STATUS_REGION  POP_STAT_R, POP_STAT_C, POP_STAT_LAST_R, POP_STAT_LAST_C
-#define POP_BANNER_REGION POP_BANNER_R, POP_BANNER_C, POP_BANNER_LAST_R, POP_BANNER_LAST_C
-
-static uint16_t popup_status_save_buffer[POP_STAT_W * POP_STAT_H];
+//const uint16_t popup_banner_save_buffer[POP_BANNER_W * POP_BANNER_H];
 
 unsigned int seconds = 1;
 
@@ -59,16 +39,16 @@ void info_display() {
 
     if (!big_status_displayed) {
 
-        save_screen_region(POP_BANNER_REGION, popup_status_save_buffer);
+        save_screen_region(POP_BANNER_REGION, popup_banner_save_buffer);
 
         set_background_colour(GREEN);
 
         clear_screen_region(POP_BANNER_REGION);
 
-        int line = POP_STAT_R + 1;
+        int line = POP_BANNER_R + 1;
 
 
-        printf(line, POP_BANNER_C + 2, "Slot  | serial number | siz | type-freq | ff | ECC | manufacturer");
+        printf(line, POP_BANNER_C + 2, "Slot  - serial number - size - type-freq - ff - ECC - manufacturer");
         line++;
 
         for (int i = 0; i < 16; i++) {
@@ -85,8 +65,8 @@ void info_display() {
             }
         }
 
-        prints(POP_STAT_R+8, POP_STAT_C+5, "                                    ");
-        prints(POP_STAT_R+9, POP_STAT_C+5, "Press any key to remove this banner ");
+        prints(POP_BANNER_R+8, POP_BANNER_C+5, "                                    ");
+        prints(POP_BANNER_R+9, POP_BANNER_C+5, "Press any key to remove this banner ");
 
         set_foreground_colour(palette.foreground);
         set_background_colour(palette.background);
@@ -102,23 +82,18 @@ void print_spdi_tarallo(spd_info spdi, uint8_t row)
     uint8_t curcol;
     uint16_t i;
 
-    char* serial_id = "no_serial_ASD";
-    char* form_factor_str = "ASDnknown";
+     char* form_factor_str = "ASDnknown";
 
     if (dmi_memory_device != NULL) {
-            char* temp_serial = get_serial(&dmi_memory_device->header, dmi_memory_device->serialnum);
-            if (temp_serial != NULL) {
-                serial_id = temp_serial;
-            }
             form_factor_str = form_factor(dmi_memory_device->form);
         }
 
     //serial_id = get_serial(&dmi_memory_device->header, dmi_memory_device->serialnum);
 
     // Print Slot Index, Module Size, type & Max frequency (Jedec or XMP)
-    curcol = printf(row, POP_BANNER_C + 2, "Slot %i: %s | %iGB | %s-%i | %s",
+    curcol = printf(row, POP_BANNER_C + 2, "Slot %i: %s - %iGB - %s-%i - %s",
                         spdi.slot_num,
-                        serial_id,
+                        spdi.sku,
                         spdi.module_size / 1024,
                         spdi.type,
                         spdi.freq,
@@ -148,28 +123,6 @@ const char* form_factor(uint8_t form_code) {
         case 0x09 : return "DIMM";
         case 0x0D : return "SODIMM";
         case 0x0F : return "FB-DIMM";
-        default : return "ASD"; // TODO: when sending to tarallo remember to check if "ASD", and if so DO NOT SEND, it's not in the database
+        default   : return "ASD"; // TODO: when sending to tarallo remember to check if "ASD", and if so DO NOT SEND, it's not in the database
     }
-}
-
-/*
- * function to get the serial id of the ram stick, in case the code is not present we just return NULL
- */
-char* get_serial(struct tstruct_header *header, uint8_t indice) {
-
-    if (indice == 0) {
-        return NULL;
-    }
-
-    char *str = (char *)header + header->length;
-    for (int i = 1; i < indice; i++) {
-        while (*str != '\0') {
-            str++;
-        }
-        str++;
-        if (*str == '\0') {
-            return NULL;
-        }
-    }
-    return str;
 }
