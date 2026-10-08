@@ -91,7 +91,7 @@ APP_OBJS = app/badram.o \
            app/display.o \
            app/error.o \
            app/main.o \
-<<<<<<< HEAD
+
            app/reports.o \
            app/x86/interrupt.o
 
