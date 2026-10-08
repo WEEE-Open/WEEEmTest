@@ -111,16 +111,6 @@ static void set_screen_palette(screen_palette_t *mt_palette)
             .footer_foreground = WHITE,
             .popup_background  = WHITE
         };
-    } else if (test_mode) {
-        *mt_palette = (screen_palette_t){
-            .background        = ORANGE,
-            .foreground        = WHITE,
-            .title_background  = BLACK,
-            .title_foreground  = ORANGE,
-            .footer_background = ORANGE,
-            .footer_foreground = WHITE,
-            .popup_background  = WHITE
-        };
     } else {
         *mt_palette = (screen_palette_t){
             .background        = GREEN,

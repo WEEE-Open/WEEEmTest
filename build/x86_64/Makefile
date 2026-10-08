@@ -87,14 +87,12 @@ TST_OBJS = tests/addr_walk1.o \
            tests/tests.o
 
 APP_OBJS = app/badram.o \
-           app/config.o \
-           app/display.o \
-           app/error.o \
-           app/main.o \
-
-           app/reports.o \
-           app/x86/interrupt.o
-
+            app/config.o \
+            app/display.o \
+            app/error.o \
+			app/main.o \
+			app/reports.o \
+            app/x86/interrupt.o \
            app/x86/interrupt.o\
 
 
