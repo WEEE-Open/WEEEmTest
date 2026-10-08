@@ -95,6 +95,9 @@ APP_OBJS = app/badram.o \
            app/reports.o \
            app/x86/interrupt.o
 
+           app/x86/interrupt.o\
+
+
 NET_OBJS = http-integration/tarallo.o
 		   #drivers/atl1e.o \
 		   #drivers/intel.o \
