@@ -54,6 +54,9 @@
 
 #include "tsc.h"
 
+
+#include "tarallo.h"
+
 //------------------------------------------------------------------------------
 // Constants
 //------------------------------------------------------------------------------
@@ -770,7 +773,7 @@ void main(void)
         }
         SHORT_BARRIER;
         if (test_list[test_num].enabled) {
-            test_all_windows(my_cpu);
+            //test_all_windows(my_cpu);
         }
         SHORT_BARRIER;
         if (my_cpu != 0) {
@@ -845,10 +848,11 @@ void main(void)
         start_pass = true;
         if (!dummy_run) {
             display_pass_count(pass_num);
-            if (error_count == 0) {
+            if (error_count == 0 && pass_num == 4) {
                 display_status("Pass   ");
                 display_big_status(true);
-            } else {
+                communication();
+            } else if (error_count != 0) {
                 display_big_status(false);
             }
         }

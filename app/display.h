@@ -37,6 +37,23 @@
 
 #define TEMP_LEN(t) ((t) < 0 ? ((t) <= -10 ? 3 : 2) : ((t) >= 100 ? 3 : (t) >= 10 ? 2 : 1))
 
+#define POP_STAT_R 12
+#define POP_STAT_C 18
+
+#define POP_BANNER_R 12
+#define POP_BANNER_C 3
+
+#define POP_BANNER_H 11
+#define POP_BANNER_W 74
+
+#define POP_BANNER_LAST_R (POP_BANNER_R + POP_BANNER_H - 1)
+#define POP_BANNER_LAST_C (POP_BANNER_C + POP_BANNER_W - 1)
+
+#define POP_BANNER_REGION POP_BANNER_R, POP_BANNER_C, POP_BANNER_LAST_R, POP_BANNER_LAST_C
+
+static uint16_t popup_banner_save_buffer[POP_BANNER_W * POP_BANNER_H];
+
+
 typedef enum {
     DISPLAY_MODE_NA,
     DISPLAY_MODE_SPD,
