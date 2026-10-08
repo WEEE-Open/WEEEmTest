@@ -5,7 +5,9 @@
 #include "keyboard.h"
 #include "screen.h"
 #include "spd.h"
-#include "jedec_id.h"
+//#include "jedec_id.h"
+#include "efi.h"
+#include "boot.h"
 #include "smbios.h"
 
 // the definitions are copied from the `display.c` module, since they weren't global
@@ -41,7 +43,7 @@ void info_display() {
 
         save_screen_region(POP_BANNER_REGION, popup_banner_save_buffer);
 
-        set_background_colour(GREEN);
+        set_background_colour(BLUE);
 
         clear_screen_region(POP_BANNER_REGION);
 
@@ -73,6 +75,17 @@ void info_display() {
     }
         big_status_displayed = true;
 }
+// service function to get manufacturer name
+static const char* get_manufacturer_name(uint16_t code) {
+    switch(code) {
+        // transform every "ENTRY(id, name)" line in `jedec_id.h` in a `case id: return "name"`
+        #define ENTRY(id, name) case id: return name;
+        #include "jedec_id.h"
+        #undef ENTRY
+
+        default: return "ASDnknown";
+    }
+}
 
 // service function to print the ram sticks characteristics on the screen, it prints in order:
 // Slot X | serial number| size | type | freq | form_factor | if_ecc | manufacturer
@@ -80,9 +93,9 @@ void info_display() {
 void print_spdi_tarallo(spd_info spdi, uint8_t row)
 {
     uint8_t curcol;
-    uint16_t i;
+    //uint16_t i;
 
-     char* form_factor_str = "ASDnknown";
+     const char* form_factor_str = "ASDnknown";
 
     if (dmi_memory_device != NULL) {
             form_factor_str = form_factor(dmi_memory_device->form);
@@ -97,7 +110,7 @@ void print_spdi_tarallo(spd_info spdi, uint8_t row)
                         spdi.module_size / 1024,
                         spdi.type,
                         spdi.freq,
-                        form_factor_str);
+                        (char*) form_factor_str);
 
     // Print ECC status
     if (spdi.hasECC) {
@@ -106,17 +119,11 @@ void print_spdi_tarallo(spd_info spdi, uint8_t row)
         curcol = prints(row, ++curcol, "| NO");
     }
     // Print Manufacturer from JEDEC106
-    for (i = 0; i < JEP106_CNT; i++) {
-        if (spdi.jedec_code == jep106[i].jedec_code) {
-            curcol = printf(row, ++curcol, " | %s", jep106[i].name);
-            break;
-        }
-    }
+    curcol = printf(row, ++curcol, " | %s", get_manufacturer_name(spdi.jedec_code));
 }
 
-/*
- * function to get the formfactor of all the RAM sticks, reading only the first one
- */
+// function to get the formfactor of all the RAM sticks, reading only the first one
+
 
 const char* form_factor(uint8_t form_code) {
     switch(form_code) {

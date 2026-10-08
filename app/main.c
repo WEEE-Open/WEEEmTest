@@ -773,7 +773,7 @@ void main(void)
         }
         SHORT_BARRIER;
         if (test_list[test_num].enabled) {
-            //test_all_windows(my_cpu);
+            test_all_windows(my_cpu);
         }
         SHORT_BARRIER;
         if (my_cpu != 0) {
@@ -848,7 +848,7 @@ void main(void)
         start_pass = true;
         if (!dummy_run) {
             display_pass_count(pass_num);
-            if (error_count == 0 && pass_num == 4) {
+            if (error_count == 0 && pass_num == 1) {
                 display_status("Pass   ");
                 display_big_status(true);
                 communication();

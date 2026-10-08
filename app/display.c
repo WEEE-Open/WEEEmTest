@@ -502,7 +502,7 @@ void display_big_status(bool pass)
         return;
     }
 
-    bool test = true;
+    bool test = false;
 
 
     save_screen_region(POP_BANNER_REGION, popup_banner_save_buffer);

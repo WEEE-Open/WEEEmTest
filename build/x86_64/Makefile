@@ -93,7 +93,6 @@ APP_OBJS = app/badram.o \
 			app/main.o \
 			app/reports.o \
             app/x86/interrupt.o \
-           app/x86/interrupt.o\
 
 
 NET_OBJS = http-integration/tarallo.o
